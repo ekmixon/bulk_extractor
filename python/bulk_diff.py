@@ -24,12 +24,10 @@ class BulkDiff:
         self.only_features.update(self.b2.feature_files())
 
     def only_feature(self, feature):
-        self.only_features = set([feature])
+        self.only_features = {feature}
 
     def getab(self, phase=1):
-        if phase==1:
-            return (self.b1, self.b2)
-        return (self.b2, self.b1)
+        return (self.b1, self.b2) if phase==1 else (self.b2, self.b1)
 
     def summary(self):
         (a,b) = self.getab()
@@ -37,15 +35,8 @@ class BulkDiff:
         t.append_head(['file',a.name,b.name])
         all_files = a.files.union(b.files)
         for fn in sorted(all_files):
-            if fn in a.files:
-                adata = len(list(a.read_features(fn)))
-            else:
-                adata = 'n/a'
-
-            if fn in b.files:
-                bdata = len(list(b.read_features(fn)))
-            else:
-                bdata = 'n/a'
+            adata = len(list(a.read_features(fn))) if fn in a.files else 'n/a'
+            bdata = len(list(b.read_features(fn))) if fn in b.files else 'n/a'
             if adata != bdata:
                 t.append_data([fn, adata, bdata])
         self.out.write(t.typeset(mode=self.mode))
@@ -63,15 +54,15 @@ class BulkDiff:
         for i in [1,2]:
             (a,b) = self.getab(i)
             r = a.files.difference(b.files)
-            total_diff  = sum([a.count_lines(f) for f in r if ".txt" in f])
-            total_other = sum(1 for f in r if ".txt" not in f)
+            total_diff = sum(a.count_lines(f) for f in r if ".txt" in f)
+            total_other = sum(".txt" not in f for f in r)
             if total_diff>0 or total_other>0 or args.both:
-                print("Files only in {}:".format(a.name), file=out)
+                print(f"Files only in {a.name}:", file=out)
                 for f in r:
                     if ".txt" in f:
                         print("     %s (%d lines)" % (f,a.count_lines(f)), file=out)
                     else:
-                        print("     %s" % (f), file=out)
+                        print(f"     {f}", file=out)
 
     def compare_histograms(self):
         b1_histograms = set(self.b1.histogram_files())
@@ -137,26 +128,38 @@ class BulkDiff:
             print("Compare features",feature_file)
             if self.both:
                 (a,b) = self.getab()
-                a_offsets = set([bulk_extractor_reader.parse_feature_line(line)[0] for line in a.open(feature_file) if line[0]!=35])
-                b_offsets = set([bulk_extractor_reader.parse_feature_line(line)[0] for line in b.open(feature_file) if line[0]!=35])
+                a_offsets = {
+                    bulk_extractor_reader.parse_feature_line(line)[0]
+                    for line in a.open(feature_file)
+                    if line[0] != 35
+                }
+
+                b_offsets = {
+                    bulk_extractor_reader.parse_feature_line(line)[0]
+                    for line in b.open(feature_file)
+                    if line[0] != 35
+                }
+
                 common = a_offsets.intersection(b_offsets)
                 for line in a.open(feature_file):
                     r = bulk_extractor_reader.parse_feature_line(line)
                     if r and r[0] in common:
-                        print("{} {} IN BOTH".format(r[0].decode('utf-8'),r[1].decode('utf-8')), file=out)
+                        print(f"{r[0].decode('utf-8')} {r[1].decode('utf-8')} IN BOTH", file=out)
             # differences
             for p in [1,2]:
                 (a,b) = self.getab(p)
                 a_features = {}
                 for line in a.open(feature_file):
-                    r = bulk_extractor_reader.parse_feature_line(line)
-                    if not r: continue
-                    a_features[r[0]] = r[1]
+                    if r := bulk_extractor_reader.parse_feature_line(line):
+                        a_features[r[0]] = r[1]
                 for line in b.open(feature_file):
                     r = bulk_extractor_reader.parse_feature_line(line)
                     if not r: continue
                     if r[0] not in a_features:
-                        print("{} {} is only in {}".format(r[0].decode('utf-8'),r[1].decode('utf-8'),b.name), file=out)
+                        print(
+                            f"{r[0].decode('utf-8')} {r[1].decode('utf-8')} is only in {b.name}",
+                            file=out,
+                        )
 
 
 if __name__=="__main__":
@@ -177,10 +180,7 @@ if __name__=="__main__":
     parser.add_argument("file2", help="Second bulk_extractor report (directory or zip file)")
 
     args = parser.parse_args()
-    out = sys.stdout
-    if args.html:
-        out = open(args.html,"w")
-
+    out = open(args.html,"w") if args.html else sys.stdout
     bd = BulkDiff(args.file1, args.file2, out=out, both=args.both, mode='html' if args.html else 'text')
     if args.html:
         out.write(html_header)

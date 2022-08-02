@@ -13,19 +13,18 @@ import sys
 md5s = {}
 for line in open("md5b4096.txt"):
     try:
-        (full,first) = line[0:-1].split("\t")
+        (full,first) = line[:-1].split("\t")
         md5s[first] = full
     except ValueError:
         pass
-    
+
 for fn in sys.argv[1:]:
-    print("reading {}".format(fn))
+    print(f"reading {fn}")
     for line in open(fn):
         if line[0]=='#': continue
-        (offset,md5,xml) = line.split("\t")[0:3]
+        (offset,md5,xml) = line.split("\t")[:3]
         md5 = md5.upper()
         try:
-            print(offset,md5,md5s[md5],xml[0:50])
+            print(offset, md5, md5s[md5], xml[:50])
         except KeyError:
             print("NOT IN NSRL: ",line)
-            pass

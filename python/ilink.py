@@ -21,7 +21,7 @@ def getFlagsString(flags, StringDict):
     for key, value in StringDict.items():
         if flags & key == key:
             flags -= key
-            fString += value + " | "
+            fString += f"{value} | "
     if flags != 0:
         fString += "{0:08X}".format(flags)
     else:
@@ -30,15 +30,11 @@ def getFlagsString(flags, StringDict):
 
 
 def getValueString(value, StringDict):
-    if value in StringDict:
-        vString = StringDict[value]
-    else:
-        vString = "{0:08x}".format(value)
-    return vString
+    return StringDict[value] if value in StringDict else "{0:08x}".format(value)
 
 
 def getHotKey(field):
- return getValueString(field & 0xFF, VirtualKeyCodes) + " + " + getFlagsString(field >> 8, ModifierKeyCodes)
+    return f"{getValueString(field & 0xFF, VirtualKeyCodes)} + {getFlagsString(field >> 8, ModifierKeyCodes)}"
 
 
 
@@ -79,17 +75,14 @@ class LinkStructBase:
                 elif fmtStr.upper() == "FLG":
                     outStr += getFlagsString(getattr(self, field), val)
                 elif fmtStr.upper() == "OBJ":
-                    outStr += "\n" + getattr(self, field).getString(pad + "  ")
+                    outStr += "\n" + getattr(self, field).getString(f"{pad}  ")
                 elif fmtStr.upper() == "FCT":
                     outStr += val(getattr(self, field))
                 elif fmtStr.upper() == "LST":
                     outStr += "["
                     lst = getattr(self, field)
                     for lstItem in lst:
-                        if isinstance(lstItem, LinkStructBase):
-                            outStr += ""
-                        else:
-                            outStr += repr(lstItem) + ", "
+                        outStr += "" if isinstance(lstItem, LinkStructBase) else f"{repr(lstItem)}, "
                     outStr += "]"
                 else:
                     outStr += repr(format(getattr(self, field), fmtStr))
@@ -101,18 +94,26 @@ class LinkStructBase:
 
 class LinkFileHeader(LinkStructBase):
     def parseData(self):
-        (self.Signature, 
-         clsid1, clsid2, clsid3, clsid4, 
-         self.LinkFlags, 
-         self.FileAttributes, 
-         self.CreationTime, 
-         self.AccessTime, 
-         self.WriteTime, 
-         self.FileSize, 
-         self.IconIndex, 
-         self.ShowCommand,
-         self.HotKey,
-         reserved1, reserved2, reserved3) = struct.unpack("=LLHHQLLQQQLLLHHLL", self.data[0:76])
+        (
+            self.Signature,
+            clsid1,
+            clsid2,
+            clsid3,
+            clsid4,
+            self.LinkFlags,
+            self.FileAttributes,
+            self.CreationTime,
+            self.AccessTime,
+            self.WriteTime,
+            self.FileSize,
+            self.IconIndex,
+            self.ShowCommand,
+            self.HotKey,
+            reserved1,
+            reserved2,
+            reserved3,
+        ) = struct.unpack("=LLHHQLLQQQLLLHHLL", self.data[:76])
+
         self.LinkCLSID = [clsid1, clsid2, clsid3, clsid4]
         self.Reserved = [reserved1, reserved2, reserved3]
 
@@ -132,7 +133,7 @@ class LinkFileHeader(LinkStructBase):
 
 class LinkFileIDList(LinkStructBase):
     def parseData(self):
-        (itemIDSize,) = (self.IDListSize,) = struct.unpack("=H", self.data[0:2])
+        (itemIDSize,) = (self.IDListSize,) = struct.unpack("=H", self.data[:2])
         idx = 2
         while itemIDSize != 0:
             (itemIDSize,) = struct.unpack("=H", self.data[idx:idx + 2])
@@ -148,15 +149,18 @@ class LinkFileIDList(LinkStructBase):
 
 class LinkInfo(LinkStructBase):
     def parseData(self):
-        (self.Size,
-         self.HeaderSize,
-         self.Flags,
-         self.VolumeIDOffset,
-         self.LocalBasePathOffset,
-         self.CommonNetworkRelativeLinkOffset,
-         self.CommonPathSuffixOffset) = struct.unpack("=LLLLLLL", self.data[0:28])
-        idx = 28
+        (
+            self.Size,
+            self.HeaderSize,
+            self.Flags,
+            self.VolumeIDOffset,
+            self.LocalBasePathOffset,
+            self.CommonNetworkRelativeLinkOffset,
+            self.CommonPathSuffixOffset,
+        ) = struct.unpack("=LLLLLLL", self.data[:28])
+
         if self.HeaderSize >= 0x24:
+            idx = 28
             (self.LocalBasePathOffsetUnicode,) = struct.unpack("=L", self.data[idx:idx + 4])
             self.LocalBasePathUnicode = readASCIIZ(self.data[self.LocalBasePathOffsetUnicode:], 2)
             (self.CommonPathSuffixOffsetUnicode,) = struct.unpack("=L", self.data[idx + 4:idx + 8])
@@ -190,11 +194,13 @@ class LinkInfo(LinkStructBase):
 
 class VolumeID(LinkStructBase):
     def parseData(self):
-        (self.Size,
-         self.DriveType,
-         self.DriveSerialNumber,
-         self.VolumeLabelOffset
-         ) = struct.unpack("=LLLL", self.data[0:16])
+        (
+            self.Size,
+            self.DriveType,
+            self.DriveSerialNumber,
+            self.VolumeLabelOffset,
+        ) = struct.unpack("=LLLL", self.data[:16])
+
         if self.VolumeLabelOffset == 0x14:
             self.VolumeLabelOffsetUnicode = struct.unpack("=L", self.data[16:20])
             self.Data = readASCIIZ(self.data[self.VolumeLabelOffsetUnicode:], 2)
@@ -251,10 +257,8 @@ class StringData(LinkStructBase):
         LinkStructBase.__init__(self, dataStr)
 
     def parseData(self):
-        strFactor = 1
-        if self.Flags & IsUnicode:
-            strFactor = 2
-        (self.CountCharacters,) = struct.unpack("=H", self.data[0:2])
+        strFactor = 2 if self.Flags & IsUnicode else 1
+        (self.CountCharacters,) = struct.unpack("=H", self.data[:2])
         self.String = readASCIIZ(self.data[2:2 + self.CountCharacters * strFactor], strFactor)
 
     Fields = [("Name", "s")]
@@ -262,7 +266,7 @@ class StringData(LinkStructBase):
 
 class ExtraData(LinkStructBase):
     def parseData(self):
-        (size,), idx, bType, bName = struct.unpack("=L", self.data[0:4]), 0, 0, ""
+        (size,), idx, bType, bName = struct.unpack("=L", self.data[:4]), 0, 0, ""
         types = {ConsoleFEDataBlockSig: ConsoleFEDataBlock,
                  ConsoleDataBlockSig: ConsoleDataBlock,
                  DarwinDataBlockSig: DarwinDataBlock,
@@ -289,8 +293,7 @@ class ExtraData(LinkStructBase):
 
 class ExtraDataBlock(LinkStructBase):
     def parseData(self):
-        (self.BlockSize,
-         self.BlockSignature) = struct.unpack("=LL", self.data[0:8])
+        (self.BlockSize, self.BlockSignature) = struct.unpack("=LL", self.data[:8])
 
     Fields = [("BlockSize", "08d"),
               ("BlockSignature", "08d")]
@@ -413,9 +416,7 @@ class LinkFile(LinkStructBase):
         self.ExtraData = ExtraData(self.data[idx:])
 
     def parseStrings(self, strList, idx):
-        strFactor = 1
-        if self.Header.LinkFlags & IsUnicode:
-            strFactor = 2
+        strFactor = 2 if self.Header.LinkFlags & IsUnicode else 1
         for flags, member in strList:
             if self.Header.LinkFlags & flags:
                 (size,) = struct.unpack("=H", self.data[idx: idx + 2])
@@ -431,10 +432,9 @@ class LinkFile(LinkStructBase):
 
 
 def dumpFile(fileName = ""):
-    fi = open(fileName, "rb")
-    lf = LinkFile(fi)
-    print lf.getString("  ")
-    fi.close()
+    with open(fileName, "rb") as fi:
+        lf = LinkFile(fi)
+        fi = open(fileName, "rb")
 
 
 if __name__ == "__main__":

@@ -39,12 +39,10 @@ def fiwalk_installed_version(fiwalk='fiwalk'):
     from subprocess import Popen,PIPE
     import re
     for line in Popen([fiwalk,'-V'],stdout=PIPE).stdout.read().decode('utf-8').split("\n"):
-        g = re.search("^FIWalk Version:\s+(.*)$",line)
-        if g:
+        if g := re.search("^FIWalk Version:\s+(.*)$", line):
             fiwalk_cached_installed_version = g.group(1)
             return fiwalk_cached_installed_version
-        g = re.search("^SleuthKit Version:\s+(.*)$",line)
-        if g:
+        if g := re.search("^SleuthKit Version:\s+(.*)$", line):
             fiwalk_cached_installed_version = g.group(1)
             return fiwalk_cached_installed_version
     return None
@@ -110,8 +108,8 @@ def E01_glob(fn):
                 return ret
         # Got through E99, now do EAA through EZZ
         fmt = fn.replace(".E01",".E%c%c")
-        for i in range(0,26):
-            for j in range(0,26):
+        for i in range(26):
+            for j in range(26):
                 f2 = fmt % (i+ord('A'),j+ord('A'))
                 if os.path.exists(f2):
                     ret.append(f2)
@@ -129,7 +127,7 @@ def fiwalk_xml_stream(imagefile=None,flags=0,fiwalk="fiwalk",fiwalk_args=""):
     try:
         res = Popen([fiwalk,'-V'],stdout=PIPE).communicate()[0]
     except OSError:
-        raise RuntimeError("Cannot execute fiwalk executable: "+fiwalk)
+        raise RuntimeError(f"Cannot execute fiwalk executable: {fiwalk}")
     cmd = [fiwalk,'-x']
     if fiwalk_args: cmd += fiwalk_args.split()
     p = Popen(cmd + E01_glob(imagefile.name),stdout=PIPE)
@@ -139,7 +137,7 @@ def fiwalk_using_sax(imagefile=None,xmlfile=None,fiwalk="fiwalk",flags=0,callbac
     """Processes an image using expat, calling a callback for every file object encountered.
     If xmlfile is provided, use that as the xmlfile, otherwise runs fiwalk."""
     import dfxml
-    if xmlfile==None:
+    if xmlfile is None:
         xmlfile = fiwalk_xml_stream(imagefile=imagefile,flags=flags,fiwalk=fiwalk,fiwalk_args=fiwalk_args)
     r = dfxml.fileobject_reader(flags=flags)
     r.imagefile = imagefile
@@ -155,7 +153,7 @@ def fileobjects_using_dom(imagefile=None,xmlfile=None,fiwalk="fiwalk",flags=0,ca
     """Processes an image using expat, calling a callback for every file object encountered.
     If xmlfile is provided, use that as the xmlfile, otherwise runs fiwalk."""
     import dfxml
-    if xmlfile==None:
+    if xmlfile is None:
         xmlfile = fiwalk_xml_stream(imagefile=imagefile,flags=flags,fiwalk=fiwalk)
     return dfxml.fileobjects_dom(xmlfile=xmlfile,imagefile=imagefile,flags=flags)
 
@@ -167,7 +165,7 @@ def cb_count(fn):
 if __name__=="__main__":
     import sys
     for fn in sys.argv[1:]:
-        print("{} contains fiwalk version {}".format(fn,fiwalk_xml_version(fn)))
+        print(f"{fn} contains fiwalk version {fiwalk_xml_version(fn)}")
         # Count the number of files
         fiwalk_using_sax(xmlfile=open(fn,'rb'),callback=cb_count)
-        print("Files: {}".format(ctr))
+        print(f"Files: {ctr}")

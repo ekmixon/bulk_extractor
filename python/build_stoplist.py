@@ -31,12 +31,12 @@ def process(report,fsc):
             all_emails.add(a)
     except KeyError:
         pass
-    print("Processed {}; now {} unique emails".format(report,len(all_emails)))
+    print(f"Processed {report}; now {len(all_emails)} unique emails")
 
             
 
 if __name__=="__main__":
-    import argparse 
+    import argparse
     global args
     import sys,time,zlib,zipfile
 
@@ -53,9 +53,9 @@ if __name__=="__main__":
         try:
             process(fn,fsc)
         except zlib.error:
-            print("{} appears corrupt".format(fn))
+            print(f"{fn} appears corrupt")
         except zipfile.BadZipFile:
-            print("{} has a bad zip file".format(fn))
+            print(f"{fn} has a bad zip file")
 
     with open(args.stoplist,"wb") as f:
         f.write(b"\n".join(sorted(all_emails)))

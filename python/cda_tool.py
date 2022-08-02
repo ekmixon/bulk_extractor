@@ -47,10 +47,10 @@ class Correlator:
         self.features   = collections.defaultdict(dict)   # for each feature, maps to a tupple of (drivename,count)
 
     def longest_drive_name(self):
-        return max([len(s) for s in self.drives])
+        return max(len(s) for s in self.drives)
 
     def longest_feature_name(self):
-        return max([len(s) for s in self.features.keys()])
+        return max(len(s) for s in self.features.keys())
 
     def ingest_feature_file(self,f,context_stop_list):
         """Read the lines in a feature file; returns how many lines were procesed"""
@@ -59,12 +59,11 @@ class Correlator:
         for line in f:
             if type(line)==bytes:
                 line = line.decode('utf-8')
-            m = bulk_extractor_reader.get_property_line(line)
-            if m:
+            if m := bulk_extractor_reader.get_property_line(line):
                 if m[0]=='Filename':
                     drivename = m[1]
                     self.drives.add(drivename)
-                    print("Scanning {} for {}".format(drivename,self.name))
+                    print(f"Scanning {drivename} for {self.name}")
             if bulk_extractor_reader.is_comment_line(line):
                 continue
             count += 1
@@ -75,7 +74,7 @@ class Correlator:
             feature = line.split("\t")[1]
             featuredict = self.features[feature]
             featuredict[drivename] = featuredict.get(drivename,0)+1
-        print("   processed {} features".format(count))
+        print(f"   processed {count} features")
         return count
 
     def ingest_histogram_file(self,f):
@@ -83,12 +82,11 @@ class Correlator:
         for line in f:
             if type(line)==bytes:
                 line = line.decode('utf-8')
-            m = bulk_extractor_reader.get_property_line(line)
-            if m:
+            if m := bulk_extractor_reader.get_property_line(line):
                 if m[0]=='Filename':
                     drivename = m[1]
                     self.drives.add(drivename)
-                    print("Scanning {} for {}".format(drivename,self.name))
+                    print(f"Scanning {drivename} for {self.name}")
                 continue
             if bulk_extractor_reader.is_comment_line(line):
                 continue
@@ -111,7 +109,7 @@ class Correlator:
             f.write(fmt.format(d,len(self.features[d]),self.features[d]))
 
 
-if(__name__=="__main__"):
+if (__name__=="__main__"):
     import argparse,xml.parsers.expat
 
     parser = argparse.ArgumentParser(description='Cross Drive Analysis with bulk_extractor output')
@@ -128,28 +126,25 @@ if(__name__=="__main__"):
 
     if args.makestop:
         if os.path.exists(args.makestop):
-            raise IOError(args.makestop+": file exists")
+            raise IOError(f"{args.makestop}: file exists")
         if args.threshold<0 or args.threshold>1:
-            raise RuntimeError("threshold should be between 0 and 1; you supplied "+str(args.threshold))
+            raise RuntimeError(
+                f"threshold should be between 0 and 1; you supplied {str(args.threshold)}"
+            )
+
 
     # Create the correlators, one for each feature file
-    correlators = set()
-    for name in args.idfeatures.split(","):
-        correlators.add(Correlator(name))
-        
+    correlators = {Correlator(name) for name in args.idfeatures.split(",")}
     # Create the br readers, one for each report
     br_readers  = set()
     for fname in args.reports:
         # On windows the '*' may not be expanded....
-        if '*' in fname:
-            fns = glob.glob(fname)
-        else:
-            fns = [fname]
+        fns = glob.glob(fname) if '*' in fname else [fname]
         for fn in fns:
             try:
                 br_readers.add(bulk_extractor_reader.BulkReport(fn))
             except IOError:
-                print("{} is an invalid bulk_extractor report. Cannot continue. STOP.\n".format(fn))
+                print(f"{fn} is an invalid bulk_extractor report. Cannot continue. STOP.\n")
                 exit(1)
 
     # Now read each feature file from each reader
@@ -157,20 +152,20 @@ if(__name__=="__main__"):
     for c in correlators:
         context_stop_list = set()
         for br in br_readers:
-            b = br.open(c.name+".txt",mode='r')
+            b = br.open(f"{c.name}.txt", mode='r')
             if args.makecombined:
                 count = c.ingest_feature_file(b,context_stop_list)
             else:
                 count = c.ingest_feature_file(b,None)
         if args.makecombined:
-            fn = "combined-" + c.name + ".txt"
+            fn = f"combined-{c.name}.txt"
             with open(fn,mode='w') as f:
                 for (feature,context) in context_stop_list:
                     f.write("".join(['','\t',feature,'\t',context,'\n']))
-            print("Created {} with {} lines\n".format(fn,len(context_stop_list)))
+            print(f"Created {fn} with {len(context_stop_list)} lines\n")
             print("DONE")
             exit(0)
-    
+
     if args.dump:
         for c in correlators:
             c.dump_stats(sys.stdout)
@@ -190,15 +185,15 @@ if(__name__=="__main__"):
                     stoplist.add(feature)
         with open(args.makestop,"w") as f:
             for feature in sorted(stoplist):
-                f.write("{}\n".format(feature));
-        print("Stoplist {} created with {} features".format(args.makestop,len(stoplist)))
+                f.write(f"{feature}\n");
+        print(f"Stoplist {args.makestop} created with {len(stoplist)} features")
         print("   DPF   Feature Count")
         for i in sorted(drives_per_feature.keys()):
             print("{:6}    {:8}".format(i,drives_per_feature[i]))
         print("--------------------")
         print("DPF = Drives per Feature")
-        print("Only features on {} or more drives were written.".format(drive_threshold))
-        
+        print(f"Only features on {drive_threshold} or more drives were written.")
+                
 
 
     # Perhaps the user wants to perform identity-based correlation?
@@ -210,7 +205,7 @@ if(__name__=="__main__"):
         drives_all = set()
         for c in correlators:
             drives_all = drives_all.union(c.drives)
-        
+
         # Now compute the affinity between all the drives
         # ((driveA,driveB),score) added
         scores = []
@@ -227,15 +222,15 @@ if(__name__=="__main__"):
                             score += factor
                             factors.append((factor,feature))
                 factors.sort(key=lambda a:-int(a[0]))
-                scores.append(((driveA,driveB),score,factors[0:5]))
+                scores.append(((driveA,driveB), score, factors[:5]))
         scores.sort(key=lambda a:-a[1])
         for ((a,b),score,factors) in scores:
             if(score==0): continue
-            print("Drive A: {}".format(a))
-            print("Drive B: {}".format(b))
-            print("Score  : {}".format(score))
+            print(f"Drive A: {a}")
+            print(f"Drive B: {b}")
+            print(f"Score  : {score}")
             print("Top factors:")
-            for (a,b) in factors[0:10]:
+            for (a,b) in factors[:10]:
                 print("        {:1.4}  {}".format(a,b))
             print("")
             

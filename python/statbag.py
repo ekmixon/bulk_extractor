@@ -83,10 +83,7 @@ class statbag:
 
     def variance(self):
         avg = self.average()
-        var = 0
-        for i in self.x:
-            var  += (i - avg) * (i - avg)
-        return var
+        return sum((i - avg) * (i - avg) for i in self.x)
             
     def stddev(self):
         import math
@@ -110,19 +107,14 @@ class statbag:
         sumxy = self.sumxy()
         top = n * sumxy - sumx*sumy
         bot = math.sqrt(( n * sumxx - sumx*sumx) * (n * sumyy - sumy*sumy))
-        if(bot==0): return 0            # not correlated
-        return top / bot
+        return 0 if (bot==0) else top / bot
 
     def xystr(self):
         """ Return a string of all the xy values """
-        ret = ""
-        for i in range(len(self.x)):
-            ret += "%g %g\n" % (self.x[i],self.y[i])
-        return ret
+        return "".join("%g %g\n" % (self.x[i],self.y[i]) for i in range(len(self.x)))
 
     def stats1(self):
-        ret = ""
-        ret += "Single variable stats:\n"
+        ret = "" + "Single variable stats:\n"
         ret += "count= %d\n" % self.count()
         ret += "min: %g max: %g range: %g\n" % (self.minx(),self.maxx(),self.rangex())
         ret += "sum: %g  sum of squares:  %g \n" % (self.sumx(), self.sumxx())
@@ -152,47 +144,43 @@ class statbag:
         
     def plot_date_histogram(self,fname,title,width,height):
         def add_days(date,days):
-            return time.localtime(time.mktime(date)+60*60*24*days)[0:3] + (0,0,0,0,0,0)
+            return time.localtime(time.mktime(date)+60*60*24*days)[:3] + (0,0,0,0,0,0)
 
         first = add_days(self.minx(),-1) # start one day before
         last  = add_days(self.maxx(),1)  # go to one day after
 
-        cmd_file = fname+".txt"
-        dat_file = fname+".dat"
+        cmd_file = f"{fname}.txt"
+        dat_file = f"{fname}.dat"
 
-        d = open(dat_file,"w")
-
-        # Generate output for every day...
-        # And generate a "0" for every day that we don't have an entry
-        # that follows an actual day...
-        hist = self.histogram()
-        k = hist.keys()
-        k.sort()
-        for i in k:
-            # Check for the previous day
-            yesterday = add_days(i,-1)
-            if(not hist.has_key(yesterday)):
-                d.write("%d/%d/%d  0\n" % (yesterday[1],yesterday[2],yesterday[0]))
-            d.write("%d/%d/%d   %d\n" % (i[1],i[2],i[0],hist[i]))
-            # Check for the next day
-            tomorrow = add_days(i,1)
-            if(not hist.has_key(tomorrow)):
-                d.write("%d/%d/%d  0\n" % (tomorrow[1],tomorrow[2],tomorrow[0]))
-        d.close()
-
-        f = open(cmd_file,"w")
-        f.write("set terminal png small size %d,%d\n" % (width,height)) # "small" is fontsize
-        f.write("set output '%s'\n" % fname)
-        f.write("set xdata time\n")
-        f.write("set timefmt '%m/%d/%y'\n")
-        f.write("set xrange ['%d/%d/%d':'%d/%d/%d']\n" %
-                (first[1],first[2],first[0], last[1],last[2],last[0]+1))
-        f.write("set format x '%m/%d'\n")
-        f.write("set boxwidth 0.5 relative\n")
-        f.write("plot '%s' using 1:2 t '%s' with boxes fs solid\n" % (dat_file,title))
-        f.write("quit\n")
-        f.close()
-        os.system("gnuplot %s" % cmd_file)
+        with open(dat_file,"w") as d:
+            # Generate output for every day...
+            # And generate a "0" for every day that we don't have an entry
+            # that follows an actual day...
+            hist = self.histogram()
+            k = hist.keys()
+            k.sort()
+            for i in k:
+                # Check for the previous day
+                yesterday = add_days(i,-1)
+                if(not hist.has_key(yesterday)):
+                    d.write("%d/%d/%d  0\n" % (yesterday[1],yesterday[2],yesterday[0]))
+                d.write("%d/%d/%d   %d\n" % (i[1],i[2],i[0],hist[i]))
+                # Check for the next day
+                tomorrow = add_days(i,1)
+                if(not hist.has_key(tomorrow)):
+                    d.write("%d/%d/%d  0\n" % (tomorrow[1],tomorrow[2],tomorrow[0]))
+        with open(cmd_file,"w") as f:
+            f.write("set terminal png small size %d,%d\n" % (width,height)) # "small" is fontsize
+            f.write("set output '%s'\n" % fname)
+            f.write("set xdata time\n")
+            f.write("set timefmt '%m/%d/%y'\n")
+            f.write("set xrange ['%d/%d/%d':'%d/%d/%d']\n" %
+                    (first[1],first[2],first[0], last[1],last[2],last[0]+1))
+            f.write("set format x '%m/%d'\n")
+            f.write("set boxwidth 0.5 relative\n")
+            f.write("plot '%s' using 1:2 t '%s' with boxes fs solid\n" % (dat_file,title))
+            f.write("quit\n")
+        os.system(f"gnuplot {cmd_file}")
 	#os.unlink(cmd_file)
         #os.unlink(dat_file)
 

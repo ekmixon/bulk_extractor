@@ -31,7 +31,7 @@ def make_plot(datasets, x_var, y_vars, group_var, filename):
         all_y_values += (tuple((y_var.of(report) for report in dataset)),)
         minima += (min(all_y_values[-1]),)
         maxima += (max(all_y_values[-1]),)
-        plot_labels += (group_var.name + " " + str(group_var.of(dataset[0])),)
+        plot_labels += (f"{group_var.name} {str(group_var.of(dataset[0]))}", )
 
     y_min = min(minima)
     y_max = max(maxima)
@@ -132,7 +132,7 @@ class AxisVar:
             self.of = lambda x: 0
             self.label = "Nothing"
         else:
-            raise ValueError("unknown variable name " + str(var_name))
+            raise ValueError(f"unknown variable name {str(var_name)}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -150,11 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--xdups_ok", help="It is okay to have dups on the X axis", action='store_true')
 
     args = parser.parse_args()
-    if args.group_var:
-        group_var = AxisVar(args.group_var)
-    else:
-        group_var = AxisVar("none")
-
+    group_var = AxisVar(args.group_var) if args.group_var else AxisVar("none")
     if args.cpu:
         plot_cpu( reports=args.reports, filename=args.output_filename )
         exit(0)
@@ -176,7 +172,7 @@ if __name__ == "__main__":
     datasets = []
     dataset  = []
     for report in reports:
-        if len(dataset) < 1:
+        if not dataset:
             dataset.append(report)
             continue
         if group_var.of(report) != group_var.of(dataset[0]):
@@ -190,9 +186,14 @@ if __name__ == "__main__":
     # check x uniqueness
     if args.xdups_ok==False:
         for dataset in datasets:
-            if len(set([args.x_var.of(report) for report in dataset])) != len(dataset):
-                print("x value ({}) must be unique per grouping ({})"
-                      .format(args.x_var.name, group_var.name), file=sys.stderr)
+            if len({args.x_var.of(report) for report in dataset}) != len(
+                dataset
+            ):
+                print(
+                    f"x value ({args.x_var.name}) must be unique per grouping ({group_var.name})",
+                    file=sys.stderr,
+                )
+
                 for d in dataset:
                     print(args.x_var.of(d), d)
                 exit(1)

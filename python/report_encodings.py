@@ -33,7 +33,7 @@ space="\\hspace{2pc}"
 
 def drive_name(path):
     if path[-1]=='/':
-        path = path[0:-1]
+        path = path[:-1]
     return path.split("/")[-1]    
 
 def process_line(line):
@@ -46,8 +46,8 @@ def process_line(line):
     encoding    = "".join(filter(lambda s:not s.isdigit(),path))
     encoding = encoding.replace("BASE","BASE64") # put back BASE64
     encoding = encoding.replace("--","-")        # 
-    if encoding[0:1]=='-': encoding=encoding[1:]
-    if encoding[-1:]=='-': encoding=encoding[:-1]
+    encoding = encoding.removeprefix('-')
+    encoding = encoding.removesuffix('-')
     feature = bulk_extractor_reader.decode_feature(fields[1])
     return (path,encoding,feature,nofilename)
 
@@ -68,7 +68,7 @@ class Drive:
         ber = bulk_extractor_reader.BulkReport(self.fn,do_validate=False)
         for ff in ber.feature_files():
             if ff in ignored_features: continue
-            print("Processing {} in {}".format(ff,self.fn))
+            print(f"Processing {ff} in {self.fn}")
             self.process_feature_file(ber,ff)
 
     def process_feature_file(self,ber,ff):
@@ -79,15 +79,8 @@ class Drive:
             try:
                 (path,encoding,feature,nofilename) = process_line(line)
                 self.f_encoding_counts[ff][encoding] += 1
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, UnicodeEncodeError, SystemError):
                 self.uderror += 1
-                pass
-            except UnicodeEncodeError:
-                self.uderror += 1
-                pass
-            except SystemError:
-                self.uderror += 1
-                pass
 
 
 
@@ -99,7 +92,7 @@ if __name__=="__main__":
     parser.add_argument("--verbose",help="Print all email addresses",action='store_true')
     parser.add_argument("--latex",help="output file for LaTeX",type=str)
     args = parser.parse_args()
-    
+
     if not args.bereports:
         parser.print_help()
 
@@ -114,11 +107,7 @@ if __name__=="__main__":
     # Perform glob expansion for Windows
     files = []
     for fn in args.bereports:
-        if "*" in fn:
-            files += glob.glob(fn)
-        else:
-            files += [fn]
-
+        files += glob.glob(fn) if "*" in fn else [fn]
     drive_encoding_counts = {}
     for fn in files:
         print("")
@@ -128,7 +117,7 @@ if __name__=="__main__":
             if ff not in drive_encoding_counts: drive_encoding_counts[ff] = defaultdict(statbag)
             for encoding in d.f_encoding_counts[ff]:
                 drive_encoding_counts[ff][encoding].addx(d.f_encoding_counts[ff][encoding])
-                
+
     # Now that the data have been collected, typeset the big table
     t = ttable.ttable()
     t.latex_colspec = "lrrrrr"
@@ -139,18 +128,18 @@ if __name__=="__main__":
     t.set_col_alignment(3,t.RIGHT)
     t.set_col_alignment(4,t.RIGHT)
     t.set_col_alignment(5,t.RIGHT)
-    
+
     rep = []                    # report will be sorted by second column
 
     print("\n"*4)
     for ff in sorted(drive_encoding_counts.keys()):
         for enc in sorted(drive_encoding_counts[ff].keys()):
-            k = ff + " / " + str(enc)
+            k = f"{ff} / {str(enc)}"
             sb = drive_encoding_counts[ff][enc]
             row = (k,sb.count(),sb.sumx(),sb.average(),sb.maxx(),sb.stddev())
             t.append_data(row)
         t.append_data(())
-        
+
     print(t.typeset(mode='text'))
     if l:
         s = t.typeset(mode='latex')

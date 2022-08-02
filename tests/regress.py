@@ -136,10 +136,8 @@ def clear_cache():
     if os.path.exists("/usr/bin/purge"):
         call("/usr/bin/purge")
         return
-    # We must be on linux
-    f = open("/proc/sys/vm/drop_caches","wb")
-    f.write("3\n")
-    f.close()
+    with open("/proc/sys/vm/drop_caches","wb") as f:
+        f.write("3\n")
 
 def analyze_linebyline(outdir):
     """Quick analysis of an output directory"""
@@ -147,7 +145,7 @@ def analyze_linebyline(outdir):
     import xml.dom.minidom
     fn = os.path.join(outdir,"report.xml")
     lines = 0
-    inprocess = dict()
+    inprocess = {}
     for line in open(fn):
         line = line.replace("debug:","debug")
         try:
@@ -156,15 +154,13 @@ def analyze_linebyline(outdir):
             if start:
                 threadid = int(start[0].attributes['threadid'].firstChild.wholeText)
                 inprocess[threadid] = start[0]
-            end = doc.getElementsByTagName("debugwork_end")
-            if end:
+            if end := doc.getElementsByTagName("debugwork_end"):
                 threadid = int(start[0].attributes['threadid'].firstChild.wholeText)
                 inprocess[threadid] = start[0]
         except xml.parsers.expat.ExpatError as e:
             print(e)
-            pass
         lines += 1
-    print("Total lines: {}".format(lines))
+    print(f"Total lines: {lines}")
     exit(0)
 
 def reproduce_flags(outdir):
@@ -180,16 +176,13 @@ def reproduce_flags(outdir):
         line = line.replace("debug:","debug")
         try:
             doc = xml.dom.minidom.parseString(line)
-            prov_filename = doc.getElementsByTagName("provided_filename")
-            if prov_filename:
+            if prov_filename := doc.getElementsByTagName("provided_filename"):
                 filename = str(prov_filename[0].firstChild.wholeText)
-            start = doc.getElementsByTagName("debugwork_start")
-            if start:
+            if start := doc.getElementsByTagName("debugwork_start"):
                 offset = int(start[0].attributes['pos0'].firstChild.wholeText)
                 last_start_offset = offset
-                active_offsets.add(offset)
-            end = doc.getElementsByTagName("debugwork_end")
-            if end:
+                active_offsets.add(last_start_offset)
+            if end := doc.getElementsByTagName("debugwork_end"):
                 offset = int(end[0].attributes['pos0'].firstChild.wholeText)
                 try:
                     active_offsets.remove(offset)
@@ -198,7 +191,7 @@ def reproduce_flags(outdir):
         except xml.parsers.expat.ExpatError as e:
             #print(e)
             pass
-    if len(active_offsets) < 1:
+    if not active_offsets:
         print("*** Warning: no unfinished sectors found; using best guess of last sector started")
         offset = last_start_offset
     else:
@@ -207,36 +200,47 @@ def reproduce_flags(outdir):
 
 def analyze_warning(fnpart,fn,lines):
     if fnpart not in be153_counts:
-        return "(No answers for {})".format(fnpart)
+        return f"(No answers for {fnpart})"
     if fn not in be153_counts[fnpart]:
-        return "(No answer for {})".format(fn)
+        return f"(No answer for {fn})"
     ref = be153_counts[fnpart][fn]
     if ref==lines: return "OK"
-    if lines<ref: return "LOW (expected {})".format(ref)
-    return "HIGH (expected {})".format(ref)
+    return f"LOW (expected {ref})" if lines<ref else f"HIGH (expected {ref})"
 
 def analyze_reportxml(xmldoc):
     # Determine if any pages were not analyzed
-    proc = dict()
+    proc = {}
     for work_start in xmldoc.getElementsByTagName("debug:work_start"):
         threadid = work_start.getAttribute('threadid')
         pos0     = work_start.getAttribute('pos0')
         if pos0 in proc:
-            print("*** error: pos0={} was started by threadid {} and threadid {}".format(pos0,proc[pos0],threadid))
+            print(
+                f"*** error: pos0={pos0} was started by threadid {proc[pos0]} and threadid {threadid}"
+            )
+
         else:
             proc[pos0] = threadid
     for work_end in xmldoc.getElementsByTagName("debug:work_end"):
         threadid = work_end.getAttribute('threadid')
         pos0     = work_end.getAttribute('pos0')
         if pos0 not in proc:
-            print("*** error: pos0={} was ended by threadid {} but never started!".format(pos0,threadid))
+            print(
+                f"*** error: pos0={pos0} was ended by threadid {threadid} but never started!"
+            )
+
         elif threadid!=proc[pos0]:
-            print("*** error: pos0={} was ended by threadid {} but ended by threadid {}".format(pos0,proc[pos0],threadid))
+            print(
+                f"*** error: pos0={pos0} was ended by threadid {proc[pos0]} but ended by threadid {threadid}"
+            )
+
         else:
             del proc[pos0]
 
     for (pos0,threadid) in proc.items():
-        print("*** error: pos0={} was started by threadid {} but never ended".format(pos0,threadid))
+        print(
+            f"*** error: pos0={pos0} was started by threadid {threadid} but never ended"
+        )
+
 
     scanner_times = []
     scanners = xmldoc.getElementsByTagName("scanner_times")[0]
@@ -311,7 +315,7 @@ def analyze_outdir(outdir):
             for fn in ffns:
                 try:
                     table = "f_"+fn.lower().replace(".txt","")
-                    cmd = "select count(*) from "+table
+                    cmd = f"select count(*) from {table}"
                     print(cmd)
                     c.execute(cmd);
                     ct = c.fetchone()[0]
@@ -321,10 +325,14 @@ def analyze_outdir(outdir):
                     for line in b.open(fn,'r'):
                         ary = bulk_extractor_reader.parse_feature_line(line)
                         if ary:
-                            (path,feature) = ary[0:2]
+                            (path,feature) = ary[:2]
                             path = path.decode('utf-8')
                             feature = feature.decode('utf-8')
-                            c.execute("select count(*) from "+table+" where path=? and feature_eutf8=?",(path,feature))
+                            c.execute(
+                                f"select count(*) from {table} where path=? and feature_eutf8=?",
+                                (path, feature),
+                            )
+
                             ct = c.fetchone()[0]
                             if ct==1:
                                 #print("feature {} {} in table {} ({})".format(path,feature,table,ct))
@@ -341,12 +349,12 @@ def analyze_outdir(outdir):
 
 
 def make_zip(dname):
-    archive_name = dname+".zip"
+    archive_name = f"{dname}.zip"
     b = bulk_extractor_reader.BulkReport(dname)
     z = zipfile.ZipFile(archive_name,compression=zipfile.ZIP_DEFLATED,mode="w")
-    print("Creating ZIP archive {}".format(archive_name))
+    print(f"Creating ZIP archive {archive_name}")
     for fname in b.all_files:
-        print("  adding {} ...".format(fname))
+        print(f"  adding {fname} ...")
         z.write(os.path.join(dname,fname),arcname=os.path.basename(fname))
 
 
@@ -363,7 +371,7 @@ def run(cmd):
     if args.dry_run: return
     r = call(cmd)
     if r!=0:
-        raise RuntimeError("{} crashed with error code {}".format(args.exe,r))
+        raise RuntimeError(f"{args.exe} crashed with error code {r}")
 
 def run_outdir(gdb=False):
     """Run bulk_extarctor to a given output directory """
@@ -378,16 +386,20 @@ def run_outdir(gdb=False):
         cargs += ['-S','write_feature_files=YES']
     else:
         cargs += ['-S','write_feature_files=NO']
-    if args.jobs: cargs += ['-j'+str(args.jobs)]
-    if args.pagesize: cargs += ['-G'+str(args.pagesize)]
-    if args.marginsize: cargs += ['-g'+str(args.marginsize)]
+    if args.jobs:
+        cargs += [f'-j{str(args.jobs)}']
+    if args.pagesize:
+        cargs += [f'-G{str(args.pagesize)}']
+    if args.marginsize:
+        cargs += [f'-g{str(args.marginsize)}']
 
     cargs += ['-e','all']    # enable 'all' scanners
     if args.extra:
         while "  " in args.extra:
             args.extra = args.extra.replace("  "," ")
         cargs += args.extra.split(" ")
-    if args.debug: cargs += ['-d'+str(args.debug)]
+    if args.debug:
+        cargs += [f'-d{str(args.debug)}']
 
     if args.find:
         cargs += ['-r','alert_list.txt']
@@ -420,12 +432,12 @@ def run_outdir(gdb=False):
 
 def sort_outdir(outdir):
     """Sort the output directory with gnu sort"""
-    print("Now sorting files in "+outdir)
-    for fn in glob.glob(outdir + "/*.txt"):
+    print(f"Now sorting files in {outdir}")
+    for fn in glob.glob(f"{outdir}/*.txt"):
         if "histogram" in fn: continue
         if "wordlist"  in fn: continue
         if "tags"      in fn: continue
-        fns  = fn+".sorted"
+        fns = f"{fn}.sorted"
         os.environ['LC_ALL']='C' # make sure we sort in C order
         call(['sort','--buffer-size=4000000000',fn],stdout=open(fns,"w"))
         # count how many lines
@@ -459,9 +471,12 @@ def invalid_feature_file_line(line,fields):
     if len(line)==0: return None    # empty lines are okay
     if line[0]=='#': return None # comments are okay
     if len(fields)!=3: return "Wrong number of fields"     # wrong number of fields
-    if len(fields[0])>MAX_OFFSET_SIZE: return "OFFSET > "+str(MAX_OFFSET_SIZE)
-    if len(fields[1])>MAX_FEATURE_SIZE: return "FEATURE > "+str(MAX_FEATURE_SIZE)
-    if len(fields[2])>MAX_CONTEXT_SIZE: return "CONTEXT > "+str(MAX_CONTEXT_SIZE)
+    if len(fields[0])>MAX_OFFSET_SIZE:
+        return f"OFFSET > {str(MAX_OFFSET_SIZE)}"
+    if len(fields[1])>MAX_FEATURE_SIZE:
+        return f"FEATURE > {str(MAX_FEATURE_SIZE)}"
+    if len(fields[2])>MAX_CONTEXT_SIZE:
+        return f"CONTEXT > {str(MAX_CONTEXT_SIZE)}"
     return None
 
 def validate_file(f,kind):
@@ -474,7 +489,7 @@ def validate_file(f,kind):
         try:
             line = lineb.decode('utf-8')
         except UnicodeDecodeError as e:
-            print("{}:{} {} {}".format(f.name,linenumber,str(e),asbinary(lineb)))
+            print(f"{f.name}:{linenumber} {str(e)} {asbinary(lineb)}")
             continue
         if bulk_extractor_reader.is_comment_line(line):
             continue        # don't test comments
@@ -482,8 +497,7 @@ def validate_file(f,kind):
             continue        # don't test
         if kind==FEATURE_FILE:
             fields = line.split("\t")
-            r = invalid_feature_file_line(line,fields)
-            if r:
+            if r := invalid_feature_file_line(line, fields):
                 print("{}: {:8} {} Invalid feature file line: {}".format(f.name,linenumber,r,line))
             if is_kml and fields[1].count("kml")!=2:
                 print("{}: {:8} Invalid KML line: {}".format(f.name,linenumber,line))
@@ -502,7 +516,7 @@ def validate_report(fn,do_validate=True):
         b = bulk_extractor_reader.BulkReport(fn,do_validate=True)
         for fn in b.feature_files():
             if os.path.basename(fn) in str(args.ignore):
-                print("** ignore {} **".format(fn))
+                print(f"** ignore {fn} **")
                 continue
             validate_file(b.open(fn,'rb'),FEATURE_FILE)
     else:
@@ -511,8 +525,9 @@ def validate_report(fn,do_validate=True):
 
 def identify_filenames(outdir):
     """Run identify_filenames on output using the installed fiwalk"""
-    if_outdir = outdir + "-annotated"
-    ifname    = os.path.dirname(os.path.realpath(__file__)) + "/../python/identify_filenames.py"
+    if_outdir = f"{outdir}-annotated"
+    ifname = f"{os.path.dirname(os.path.realpath(__file__))}/../python/identify_filenames.py"
+
     res = call([sys.executable,ifname,outdir,if_outdir,'--all'])
 
 def diff(dname1,dname2):
@@ -524,11 +539,17 @@ def diff(dname1,dname2):
             return 0
 
     def files_in_dir(dname):
-        files = [fn.replace(dname+"/","") for fn in glob.glob(dname+"/*") if os.path.isfile(fn)]
+        files = [
+            fn.replace(f"{dname}/", "")
+            for fn in glob.glob(f"{dname}/*")
+            if os.path.isfile(fn)
+        ]
+
         return filter(lambda fn: not fn.endswith(".sqlite") ,files)
+
     def lines_to_set(fn):
         "Read the lines in a file and return them as a set. Ignore the lines beginning with #"
-        return set(filter(lambda line:line[0:1]!='#',open(fn).read().split("\n")))
+        return set(filter(lambda line: line[:1] != '#', open(fn).read().split("\n")))
 
     files1 = set(files_in_dir(dname1))
     files2 = set(files_in_dir(dname2))
@@ -561,10 +582,10 @@ def diff(dname1,dname2):
             for line in sorted(diffset):
                 extra = ""
                 if len(line) > args.diffwidth: extra="..."
-                print("{}{}{}".format(prefix,line[0:args.diffwidth],extra))
+                print("{}{}{}".format(prefix, line[:args.diffwidth], extra))
                 count += 1
                 if count>args.max:
-                    print(" ... +{} more lines".format(len(diffset)-int(args.max)))
+                    print(" ... +{} more lines".format(len(diffset) - args.max))
                     break
             return len(diffset)
 
@@ -586,11 +607,12 @@ def run_and_analyze(args):
         if_outdir = identify_filenames(outdir)
     analyze_outdir(outdir)
     t = time.time() - t0
-    print("Regression finished at {}. Elapsed time: {} ({} sec)\nOutput in {}".format(
-        time.asctime(),ptime(t),t,outdir))
+    print(
+        f"Regression finished at {time.asctime()}. Elapsed time: {ptime(t)} ({t} sec)\nOutput in {outdir}"
+    )
 
 def datadircomp(dir1,dir2):
-    print("Validating reports in {} and {}".format(dir1,dir2))
+    print(f"Validating reports in {dir1} and {dir2}")
     for d in [dir1,dir2]:
         for fn in glob.glob(os.path.join(d,"*")):
             validate_report(fn,do_validate=True)
@@ -639,7 +661,7 @@ def datacheck_checkreport(outdir):
     print("Feature files:",list(b.feature_files()))
     print("Histogram files:",list(b.histogram_files()))
     for fn in b.feature_files():
-        print("Reading feature file {}".format(fn))
+        print(f"Reading feature file {fn}")
         for (pos,feature,context) in b.read_features(fn):
             found_features[pos] = feature
     print("Now reading features from data_check.txt")
@@ -647,21 +669,24 @@ def datacheck_checkreport(outdir):
     report_mismatches = False
     found_count = 0
     for line in open("data_check.txt","rb"):
-        y = bulk_extractor_reader.parse_feature_line(line)
-        if y:
+        if y := bulk_extractor_reader.parse_feature_line(line):
             (pos,feature,context) = y
             if pos in found_features:
                 found_count += 1
                 #print("{} found".format(pos.decode('utf-8')))
-                if found_features[pos]!=feature and report_mismatches:
-                    if found_features[pos]!=b'<CACHED>' and feature!=b'<CACHED>':
-                        print("   {} != {}".format(feature,found_features[pos]))
+                if (
+                    found_features[pos] != feature
+                    and report_mismatches
+                    and found_features[pos] != b'<CACHED>'
+                    and feature != b'<CACHED>'
+                ):
+                    print(f"   {feature} != {found_features[pos]}")
             else:
                 not_found[pos] = feature
     for pos in sorted(not_found):
-        print("{} not found {}".format(pos,not_found[pos]))
-    print("Total features found: {}".format(found_count))
-    print("Total features not found: {}".format(len(not_found)))
+        print(f"{pos} not found {not_found[pos]}")
+    print(f"Total features found: {found_count}")
+    print(f"Total features not found: {len(not_found)}")
 
 
 if __name__=="__main__":
@@ -880,10 +905,10 @@ if __name__=="__main__":
             args.pagesize = pagesize
             args.margin = margin
             clear_cache()
-            args.outdir = make_outdir(args.outdir+"-{}-{}-{}".format(jobs,pagesize,margin))
+            args.outdir = make_outdir(args.outdir + f"-{jobs}-{pagesize}-{margin}")
             clear_cache()
-            ofn = "report-{}-{}-{}.xml".format(j,p,m)
-            os.rename(outdir+"/report.xml",ofn)
+            ofn = f"report-{j}-{p}-{m}.xml"
+            os.rename(f"{outdir}/report.xml", ofn)
 
         for p in range(tune_pagesize_start,tune_pagesize_end+1,tune_pagesize_step):
             for m in range(tune_marginsize_start,tune_marginsize_end+1,tune_marginsize_step):

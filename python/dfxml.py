@@ -43,6 +43,7 @@ where encoding, if present, is 0 for raw, 1 for NTFS compressed.
 
 """
 
+
 __version__ = "1.0.2"
 
 import sys
@@ -58,7 +59,7 @@ import datetime
 import logging
 _logger = logging.getLogger(os.path.basename(__file__))
 
-tsk_virtual_filenames = set(['$FAT1','$FAT2'])
+tsk_virtual_filenames = {'$FAT1', '$FAT2'}
 
 XMLNS_DC = "http://purl.org/dc/elements/1.1/"
 XMLNS_DFXML = "http://www.forensicswiki.org/wiki/Category:Digital_Forensics_XML"
@@ -81,8 +82,7 @@ def safeInt(x):
         return int(x) if x else False
 
     but that doesn't work on older version of Python."""
-    if x: return int(x)
-    return False
+    return int(x) if x else False
 
 def timestamp2iso8601(ts):
     import time
@@ -103,7 +103,7 @@ def parse_iso8601(ts):
     Z = ts.find('Z')
     if Z>0:
         return datetime.datetime.strptime(ts[:Z],"%Y-%m-%dT%H:%M:%S")
-    raise RuntimeError("parse_iso8601: ISO8601 format {} not recognized".format(ts))
+    raise RuntimeError(f"parse_iso8601: ISO8601 format {ts} not recognized")
 
 
 rx_iso8601 = re.compile("(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?(Z|[-+]\d\d:?\d\d)?")
@@ -111,23 +111,20 @@ def iso8601Tdatetime(s):
     """SLG's conversion of ISO8601 to datetime"""
     m = rx_iso8601.search(s)
     if not m:
-        raise ValueError("Cannot parse: "+s)
+        raise ValueError(f"Cannot parse: {s}")
     # Get the microseconds
     try:
         microseconds = int(float(m.group(7)) * 1000000)
     except TypeError:
         microseconds = 0
-    # Figure tz offset
-    offset = None
     minoffset = None
     if m.group(8):
         if m.group(8)=="Z":
             minoffset = 0
-        elif m.group(8)[0:1] in "-+":
-            minoffset = int(m.group(8)[0:3]) * 60 + int(m.group(8)[-2:])
+        elif m.group(8)[:1] in "-+":
+            minoffset = int(m.group(8)[:3]) * 60 + int(m.group(8)[-2:])
     z = s.find("Z")
-    if z>=0:
-        offset = 0
+    offset = 0 if z>=0 else None
     # Build the response
     if minoffset:
         return datetime.datetime(int(m.group(1)),int(m.group(2)),int(m.group(3)),
@@ -170,12 +167,11 @@ def rfc822Tdatetime(s):
     # Figure tz offset
     offset = None
     minoffset = None
-    match_timezone = mgd.get("timezone")
-    if match_timezone:
+    if match_timezone := mgd.get("timezone"):
         if match_timezone == "Z":
             minoffset = 0
         elif match_timezone[0] in "-+":
-            minoffset = int(match_timezone[0:-2]) * 60 + int(match_timezone[-2:])
+            minoffset = int(match_timezone[:-2]) * 60 + int(match_timezone[-2:])
     #TODO Find a reason to use the 'offset' variable? (Hour offset, vs. minute offset?)
     if minoffset:
         return datetime.datetime(
@@ -227,7 +223,7 @@ class byte_run:
         self.file_offset = file_offset
         self.len = len
         self.sector_size = 512          # default
-        self.hashdigest  = dict()       #
+        self.hashdigest = {}
 
     def __lt__(self,other):
         if self.img_offset is not None and other.img_offset is not None:
@@ -261,7 +257,7 @@ class byte_run:
             return "byte_run[file_offset={0}; uncompressed_len={1}]".format(
                 self.file_offset,self.uncompressed_len)
         except AttributeError:
-            return "byte_run"+str(dir(self))
+            return f"byte_run{dir(self)}"
 
     def start_sector(self):
         return self.img_offset // self.sector_size
@@ -271,7 +267,7 @@ class byte_run:
 
     def has_sector(self,s):
         if self.sector_size==0:
-            raise ValueError("%s: sector_size cannot be 0" % (self))
+            raise ValueError(f"{self}: sector_size cannot be 0")
         if self.img_offset is None or self.len is None:
             # Sparse files don't have data allocated on disk
             return False
@@ -349,12 +345,8 @@ class dftime(ComparableMixin):
 
     def __init__(self, val=None):
         #'unicode' is not a type in Python 3; 'basestring' is not a type in Python 2.
-        if sys.version_info >= (3,0):
-            _basestring = str
-        else:
-            _basestring = basestring
-
-        if isinstance(val, str) or isinstance(val,_basestring):
+        _basestring = str if sys.version_info >= (3,0) else basestring
+        if isinstance(val, (str, _basestring)):
             #
             #Test for ISO 8601 format - "YYYY-MM-DD" should have hyphen at val[4]
             if len(val)>5 and val[4]=="-":
@@ -367,12 +359,12 @@ class dftime(ComparableMixin):
                 #Maybe the data are a string-wrapped int or float?
                 #If this fails, the string format is completely unexpected, so just raise an error.
                 self.timestamp_ = float(val)
-        elif type(val)==int or type(val)==float:
+        elif type(val) in [int, float]:
             self.timestamp_ = val
         elif isinstance(val, datetime.datetime):
             self.datetime_ = val
             #TODO Unit-test this with a timezone-less datetime
-        elif val==None:
+        elif val is None:
             self.timestamp_ = None
             self.iso8601_   = None
         elif isinstance(val, dftime):
@@ -385,20 +377,15 @@ class dftime(ComparableMixin):
     def __repr__(self):
         return repr(self.iso8601()) or "None"
     def __le__(self,b):
-        if b is None: return None
-        return self.iso8601().__le__(b.iso8601())
+        return None if b is None else self.iso8601().__le__(b.iso8601())
     def __gt__(self,b):
-        if b is None: return None
-        return self.iso8601().__gt__(b.iso8601())
+        return None if b is None else self.iso8601().__gt__(b.iso8601())
     def _cmpkey(self):
         """Provide a key to use for comparisons; for use with ComparableMixin parent class."""
         return self.timestamp()
 
     def __eq__(self,b):
-        if b == None:
-            #This will always be False - if self were None, we wouldn't be in this __eq__ method.
-            return False
-        return self.timestamp()==b.timestamp()
+        return False if b == None else self.timestamp()==b.timestamp()
 
     def iso8601(self):
         # Do we have a cached representation?
@@ -516,9 +503,7 @@ class registry_cell_object:
 
     def byte_runs(self):
         """Returns a sorted array of byte_run objects."""
-        #If this idiom is confusing, see:  http://henry.precheur.org/python/copy_list
-        ret = list(self._byte_runs)
-        return ret
+        return list(self._byte_runs)
 
     def sha1(self):
         """
@@ -542,9 +527,7 @@ class registry_key_object(registry_cell_object):
     def mtime(self):
         return self._mtime
     def root(self):
-        if self.type() is None:
-            return None
-        return self.type() == "root"
+        return None if self.type() is None else self.type() == "root"
 
 class registry_value_object(registry_cell_object):
     def __init__(self):
@@ -554,7 +537,7 @@ class registry_value_object(registry_cell_object):
         self._cell_type = "registry_value_object"
 
         #TODO Replace to be in line with fileobjects: fileobject.hashdigest is a dictionary
-        self._hashcache = dict()
+        self._hashcache = {}
 
         """List for the string-list type of value."""
         self.strings = None
@@ -580,7 +563,7 @@ class registry_value_object(registry_cell_object):
             feed_list = []
             if self.type() == "string-list":
                 feed_list = self.strings
-            elif not self.value_data is None:
+            elif self.value_data is not None:
                 feed_list.append(self.value_data)
             #Normalize to hash .update() required type
             for (elemindex, elem) in enumerate(feed_list):
@@ -612,14 +595,14 @@ class fileobject:
 
     def __init__(self,imagefile=None):
         self.imagefile  = imagefile
-        self.hashdigest = dict()
+        self.hashdigest = {}
 
     def __str__(self):
         try:
             fn = self.filename()
         except KeyError:
             fn = "???"
-        return "fileobject %s byte_runs: %s" % (fn, " ".join([str(x) for x in self.byte_runs()]))
+        return f'fileobject {fn} byte_runs: {" ".join([str(x) for x in self.byte_runs()])}'
 
     def partition(self):
         """Partion number of the file"""
@@ -633,10 +616,7 @@ class fileobject:
         """Extension, as a lowercase string without the leading '.'"""
         import string
         (base,ext) = os.path.splitext(self.filename())
-        if ext == '':
-            return None
-        else:
-            return ext[1:]
+        return None if ext == '' else ext[1:]
 
     def filesize(self):
         """Size of the file, in bytes"""
@@ -661,33 +641,23 @@ class fileobject:
     def ctime(self):
         """Metadata Change Time (sometimes Creation Time), as number of seconds
         since January 1, 1970 (Unix time)"""
-        t = self.tag("ctime")
-        if t: return dftime(t)
-        return None
+        return dftime(t) if (t := self.tag("ctime")) else None
 
     def atime(self):
         """Access time, as number of seconds since January 1, 1970 (Unix time)"""
-        t = self.tag("atime")
-        if t: return dftime(t)
-        return None
+        return dftime(t) if (t := self.tag("atime")) else None
 
     def crtime(self):
         """CR time, as number of seconds since January 1, 1970 (Unix time)"""
-        t = self.tag("crtime")
-        if t: return dftime(t)
-        return None
+        return dftime(t) if (t := self.tag("crtime")) else None
 
     def mtime(self):
         """Modify time, as number of seconds since January 1, 1970 (Unix time)"""
-        t = self.tag("mtime")
-        if t: return dftime(t)
-        return None
+        return dftime(t) if (t := self.tag("mtime")) else None
 
     def dtime(self):
         """ext2 dtime"""
-        t = self.tag("dtime")
-        if t: return dftime(t)
-        return None
+        return dftime(t) if (t := self.tag("dtime")) else None
 
     def times(self):
         """Return a dictionary of all times that the system has"""
@@ -730,7 +700,7 @@ class fileobject:
 
     def is_file(self):
         """Returns true if file is a file"""
-        return self.name_type()=='r' or self.name_type()==None
+        return self.name_type()=='r' or self.name_type() is None
 
     def inode(self):
         """Inode; may be a number or SleuthKit x-y-z format"""
@@ -768,14 +738,15 @@ class fileobject:
         """Returns true if the file is present in the disk image"""
         if self.filesize()==0:
             return False               # empty files are never present
-        if imagefile==None:
+        if imagefile is None:
             imagefile=self.imagefile # use this one
         for hashname in ['md5','sha1','sha256']:
-            oldhash = self.tag(hashname)
-            if oldhash:
+            if oldhash := self.tag(hashname):
                 newhash = hashlib.new(hashname,self.contents(imagefile=imagefile)).hexdigest()
                 return oldhash==newhash
-        raise ValueError("Cannot process file "+self.filename()+": no hash in "+str(self))
+        raise ValueError(
+            f"Cannot process file {self.filename()}: no hash in {str(self)}"
+        )
 
     def has_contents(self):
         """True if the file has one or more bytes"""
@@ -783,9 +754,7 @@ class fileobject:
 
     def has_sector(self,s):
         """True if sector s is contained in one of the byte_runs."""
-        for run in self.byte_runs():
-            if run.has_sector(s): return True
-        return False
+        return any(run.has_sector(s) for run in self.byte_runs())
 
     def libmagic(self):
         """Returns libmagic string if the string is specified
@@ -820,28 +789,28 @@ class fileobject:
                 offset     = safeInt(self.volume.offset)
                 block_size = safeInt(self.volume.block_size)
                 if block_size==0: block_size = 512
-                inode = self.inode()
-                if inode :
-                    block_size = 512
-                    fstype_flag = ""
-                    fstype = self.volume.ftype_str()
-                    if fstype != None:
-                        fstype_flag = '-f' + fstype
-                        cmd = ['icat',fstype_flag,'-b',str(block_size),'-o',str(offset//block_size),imagefile.name,str(inode)]
-                    else:
-                        cmd = ['icat','-b',str(block_size),'-o',str(offset//block_size),imagefile.name,str(inode)]
-                    (data,err) = Popen(cmd, stdout=PIPE,stderr=PIPE).communicate()
-                    # Check for an error
-                    if len(err) > 0 :
-                        #sys.stderr.write("Debug: type(err) = %r.\n" % type(err))
-                        raise ValueError("icat error (" + str(err).strip() + "): "+" ".join(cmd))
-                    return data
-                else :
+                if not (inode := self.inode()):
                     raise ValueError("Inode missing from file in compressed format.")
+                block_size = 512
+                fstype_flag = ""
+                fstype = self.volume.ftype_str()
+                if fstype != None:
+                    fstype_flag = f'-f{fstype}'
+                    cmd = ['icat',fstype_flag,'-b',str(block_size),'-o',str(offset//block_size),imagefile.name,str(inode)]
+                else:
+                    cmd = ['icat','-b',str(block_size),'-o',str(offset//block_size),imagefile.name,str(inode)]
+                (data,err) = Popen(cmd, stdout=PIPE,stderr=PIPE).communicate()
+                    # Check for an error
+                if len(err) > 0:
+                        #sys.stderr.write("Debug: type(err) = %r.\n" % type(err))
+                    raise ValueError(f"icat error ({str(err).strip()}): " + " ".join(cmd))
+                return data
             raise ValueError("Cannot read raw bytes in compressed disk image")
-        res = []
-        for run in self.byte_runs():
-            res.append(self.content_for_run(run=run,imagefile=imagefile))
+        res = [
+            self.content_for_run(run=run, imagefile=imagefile)
+            for run in self.byte_runs()
+        ]
+
         return "".join(res)
 
     def tempfile(self,calcMD5=False,calcSHA1=False,calcSHA256=False):
@@ -907,7 +876,7 @@ class fileobject_dom(fileobject):
                 for e in self.doc.getElementsByTagName('hashdigest'):
                     if e.getAttribute('type').lower()==name:
                         return e.firstChild.wholeText
-            raise KeyError(name+" not in XML")
+            raise KeyError(f"{name} not in XML")
 
     def has_tag(self,name) :
         try:
@@ -973,7 +942,7 @@ class volumeobject_sax(saxobject):
         self.block_size = 0
 
     def __str__(self):
-        return "volume "+(str(self._tags))
+        return f"volume {str(self._tags)}"
 
     def partition_offset(self):
         try:
@@ -1070,35 +1039,27 @@ class regxml_reader(xml_reader):
             new_object = registry_key_object()
 
             #Note these two tests for root and parent _are_ supposed to be independent tests.
-            if attrs.get("root",None) == "1":
-                new_object._type = "root"
-            else:
-                new_object._type = ""
-
+            new_object._type = "root" if attrs.get("root",None) == "1" else ""
             if len(self.objectstack) > 1:
                 new_object.parent_key = self.objectstack[-1]
 
             #Sanity check:  root key implies no parent
             if new_object.type() == "root":
-                assert new_object.parent_key == None
+                assert new_object.parent_key is None
             #Sanity check:  no parent implies root key --OR-- recovered key
-            if new_object.parent_key == None:
+            if new_object.parent_key is None:
                 assert new_object.used == False or new_object.type() == "root"
 
             #Define new_object.name
             #Force a name for keys. If the key has no recorded name, apply artificial name prefix to nonce.
             name_data = attrs.get("name")
-            if name_data == None:
-                new_object._name = "__DFXML_NONCE_" + str(self.nonce)
+            if name_data is None:
+                new_object._name = f"__DFXML_NONCE_{str(self.nonce)}"
                 self.nonce += 1
             else:
                 enc = attrs.get("name_encoding")
-                if enc == "base64":
-                    new_object._name = safe_b64decode(name_data)
-                else:
-                    new_object._name = name_data
-
-            if new_object.parent_key == None:
+                new_object._name = safe_b64decode(name_data) if enc == "base64" else name_data
+            if new_object.parent_key is None:
                 new_object._full_path = "\\" + new_object.name()
                 # TODO need a name scheme for orphan references, when we start processing orphans
             else:
@@ -1125,7 +1086,7 @@ class regxml_reader(xml_reader):
                     try:
                         new_object._name = base64.b64decode(name_data.encode("ascii")).decode("unicode_escape")
                     except:
-                        sys.stderr.write("name_data={}  type={}\n".format(name_data,type(name_data)))
+                        sys.stderr.write(f"name_data={name_data}  type={type(name_data)}\n")
                         raise
                 else:
                     new_object._name = name_data
@@ -1150,18 +1111,15 @@ class regxml_reader(xml_reader):
             new_object.registry_handle = self.registry_object
 
     def decoded_value(self, attrs):
-        value_data = attrs.get("value",None)
-        if value_data:
-            # TODO adjust hivexml to not use a plain "encoding" attribute
-            value_encoding = attrs.get("encoding", attrs.get("value_encoding"))
-            if value_encoding == "base64":
-                if sys.version_info.major>2:
-                    value_data = bytes(value_data,encoding='ascii')
-                return base64.b64decode(value_data)
-            else:
-                return value_data
-        else:
+        if not (value_data := attrs.get("value", None)):
             return None
+        # TODO adjust hivexml to not use a plain "encoding" attribute
+        value_encoding = attrs.get("encoding", attrs.get("value_encoding"))
+        if value_encoding != "base64":
+            return value_data
+        if sys.version_info.major>2:
+            value_data = bytes(value_data,encoding='ascii')
+        return base64.b64decode(value_data)
 
     def _end_element(self, name):
         """
@@ -1169,8 +1127,8 @@ class regxml_reader(xml_reader):
         """
         # TODO sanity-check the objectstack
         if name in ["msregistry","hive"]:
-            pass
-        elif name in ["key","node"]:
+            return
+        if name in ["key","node"]:
             finished_object = self.objectstack.pop()
             #Add finished object to object index
             if finished_object.full_path() in self.registry_object.object_index:
@@ -1184,18 +1142,16 @@ class regxml_reader(xml_reader):
         elif name in ["value"]:
             finished_object = self.objectstack.pop()
             #TODO Simplify once hivexml is patched to have value/@value instead of value/[cdata]
-            if finished_object.value_data == None:
+            if finished_object.value_data is None:
                 finished_object.value_data = self.cdata
             self.callback(finished_object)
         elif name in ["string"]:
             value_object = self.objectstack[-1]
-            if value_object.strings == None:
+            if value_object.strings is None:
                 raise ValueError("regxml_reader._end_element:  parsing error, string element found, but parent's type can't support a string list.")
             value_object.strings.append(self.cdata)
             self.cdata = None
-        elif name in ["byte_runs","byte_run"]:
-            pass
-        else:
+        elif name not in ["byte_runs", "byte_run"]:
             raise ValueError("regxml_reader._end_element: Don't know how to end element %s.\n" % name)
 
 class fileobject_reader(xml_reader):
@@ -1241,8 +1197,6 @@ class fileobject_reader(xml_reader):
             if "offset" in attrs:
                 self.volumeobject.offset = int(attrs["offset"])
             return
-        if name=="block_size":
-            pass
         if name=="fileobject":
             self.fileobject = fileobject_sax(imagefile=self.imagefile)
             self.fileobject.volume = self.volumeobject
@@ -1255,7 +1209,7 @@ class fileobject_reader(xml_reader):
             return
         if name=='hashdigest':
             self.hashdigest_type = attrs['type']
-        if self.fileobject and (name=="run" or name=="byte_run"):
+        if self.fileobject and name in ["run", "byte_run"]:
             b = byte_run()
             b.decode_sax_attributes(attrs)
             self.fileobject._byte_runs.append(b)
@@ -1398,7 +1352,6 @@ class extentdb:
     def __init__(self,sectorsize=512):
         self.db = []                    # the database of runs
         self.sectorsize = 512
-        pass
 
     def report(self,f):
         """Print information about the database"""
@@ -1424,7 +1377,8 @@ class extentdb:
     def intersects(self,extent):
         """Returns the intersecting extent, or None if there is none"""
         if extent.len==0: return True    # 0 length intersects with everything
-        if extent.len<0: raise ValueError("Length cannot be negative:"+str(extent))
+        if extent.len<0:
+            raise ValueError(f"Length cannot be negative:{str(extent)}")
         start = extent.img_offset
         stop  = extent.img_offset+extent.len
         for d in self.db:
@@ -1437,8 +1391,8 @@ class extentdb:
         """Returns the intersecting extent for a set of runs, or None
         if there is none."""
         for r in runs:
-            v = self.intersects(r)
-            if v: return v
+            if v := self.intersects(r):
+                return v
         return None
 
     def intersects_sector(self,sector):
@@ -1449,9 +1403,8 @@ class extentdb:
     def add(self,extent):
         """Adds an EXTENT (start,length) to the database.
         Raises ValueError if there is an intersection."""
-        v = self.intersects(extent)
-        if v:
-            raise ValueError("Cannot add "+str(extent)+": it intersects "+str(v))
+        if v := self.intersects(extent):
+            raise ValueError(f"Cannot add {str(extent)}: it intersects {str(v)}")
         self.db.append(extent)
 
     def add_runs(self,runs):
@@ -1530,21 +1483,20 @@ def iter_dfxml(xmlfile, preserve_elements=False, imagefile=None):
         raise ValueError("xmlfile must be specified")
     qtagname = "{%s}fileobject" % XMLNS_DFXML
     for event, elem in ET.iterparse(xmlfile, ("start","end")):
-        if event == "end":
-            #Note that ElementTree qualifies tag names if possible.  Thus, the paired check.
-            if elem.tag in ["fileobject", qtagname]:
-                xmlstring = ET.tostring(elem)
-                pseudof = io.BytesIO()
-                pseudof.write(xmlstring)
-                pseudof.seek(0)
-                def temp_callback(fi):
-                    #TODO The volumeobject isn't populated this way; need to catch with iterparse.
-                    if preserve_elements:
-                        fi.xml_element = elem
-                reader = read_dfxml(xmlfile=pseudof, imagefile=imagefile, callback=temp_callback, preserve_fis=True)
-                yield reader.fi_history[0]
-                if not preserve_elements:
-                    elem.clear()
+        if event == "end" and elem.tag in ["fileobject", qtagname]:
+            xmlstring = ET.tostring(elem)
+            pseudof = io.BytesIO()
+            pseudof.write(xmlstring)
+            pseudof.seek(0)
+            def temp_callback(fi):
+                #TODO The volumeobject isn't populated this way; need to catch with iterparse.
+                if preserve_elements:
+                    fi.xml_element = elem
+
+            reader = read_dfxml(xmlfile=pseudof, imagefile=imagefile, callback=temp_callback, preserve_fis=True)
+            yield reader.fi_history[0]
+            if not preserve_elements:
+                elem.clear()
 
 
 #This regular expression removes xmlns declarations from elements.
@@ -1560,8 +1512,7 @@ def ET_tostring(*pargs, **kwargs):
     global rx_xmlns
     import xml.etree.ElementTree as ET
     tempstring = ET.tostring(*pargs, **kwargs)
-    retval = re.sub(rx_xmlns, "", tempstring)
-    return retval
+    return re.sub(rx_xmlns, "", tempstring)
 
 
 def read_regxml(xmlfile=None,flags=0,callback=None):
@@ -1641,19 +1592,15 @@ if __name__=="__main__":
         da = dftime(a)
         db = dftime(b)
         result = da==db
-        warn = ""
-        if result != want:
-            warn = " (!)"
-        print("a=%s b=%s want=%s equal=%s%s" % (da,db,want,result,warn))
+        warn = " (!)" if result != want else ""
+        print(f"a={da} b={db} want={want} equal={result}{warn}")
 
     def check_greater(a,b,want=None):
         da = dftime(a)
         db = dftime(b)
         result = da>db
-        warn = ""
-        if result != want:
-            warn = " (!)"
-        print("a=%s b=%s want=%s greater=%s%s" % (da,db,want,result,warn))
+        warn = " (!)" if result != want else ""
+        print(f"a={da} b={db} want={want} greater={result}{warn}")
 
     if options.regress:
         print("Testing unicode value parsing.")

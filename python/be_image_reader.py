@@ -34,9 +34,7 @@ class BEImageReader:
         return buf
 
 def all_null(buf):
-    for ch in buf:
-        if ch!=0: return False
-    return True
+    return all(ch == 0 for ch in buf)
 
 if __name__=="__main__":
     import sys
@@ -45,10 +43,10 @@ if __name__=="__main__":
     parser.add_argument('image', type=str,  help='Image filename')
     parser.add_argument('sector', type=int, help='Offset to read')
     args = parser.parse_args()
-    
+
     r = BEImageReader(args.image)
     buf = r.read(args.sector*512,512)
     # Determine if it is all null
     if all_null(buf):
-        print("sector {} length {} is all nulls".format(args.sector,len(buf)))
+        print(f"sector {args.sector} length {len(buf)} is all nulls")
     

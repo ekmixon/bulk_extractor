@@ -18,9 +18,7 @@ if sys.version_info < (3,0,0):
 def get_filesize(fn):
     """Attempt to determine the filesize of file fn"""
     if not fn: return 0
-    if os.path.exists(fn):
-        return os.path.getsize(fn)
-    return 0
+    return os.path.getsize(fn) if os.path.exists(fn) else 0
 
 DELIM=u'\U0010001c'
 
@@ -37,15 +35,15 @@ def clean_target_filename(target_filename):
 #
 # Each block has a disk offset, a file offset, a hash, a file it was seen in.
 
-hash_count              = dict() # how many times we have seen this hash
-hash_flags              = dict() # flags for this hash
-hash_source_file_blocks = dict() # for each hash, a dict of sets of the offsets were it was found
-source_id_filenames     = dict() # filename for each source id
+hash_count = {}
+hash_flags = {}
+hash_source_file_blocks = {}
+source_id_filenames = {}
 hash_disk_blocks        = defaultdict(set) # all of the disk blocks where a given hash was seen
-hash_flags              = dict() # flags for a given hash
+hash_flags = {}
 hashes_for_source       = defaultdict(set) # for each source, a set of its hashes found
 source_id_count         = defaultdict(int)
-source_id_filesizes     = dict()
+source_id_filesizes = {}
 candidate_sources       = set()
 
 def read_explained_file(reportdir):
@@ -57,7 +55,7 @@ def read_explained_file(reportdir):
     identified_blocks_fn = os.path.join(reportdir,"identified_blocks_explained.txt")
 
     # Candidate Selection
-    print("reading {} for candidate selection".format(identified_blocks_fn))
+    print(f"reading {identified_blocks_fn} for candidate selection")
     for line in open(identified_blocks_fn):
         if line[0]=='[':        # a hash and its sources
             (hash,meta,sources) = json.loads(line)
@@ -69,15 +67,11 @@ def read_explained_file(reportdir):
 
     # Now re-read the file, but only consider blocks for candidates
 
-    print("re-reading {} to build source database".format(identified_blocks_fn))
+    print(f"re-reading {identified_blocks_fn} to build source database")
     for line in open(identified_blocks_fn):
         if line[0]=='[':        # a hash and its sources
             (hash,meta,sources) = json.loads(line)
-            is_candidate = False
-            for s in sources:
-                if s['source_id'] in candidate_sources:
-                    is_candidate = True
-                    break
+            is_candidate = any(s['source_id'] in candidate_sources for s in sources)
             if not is_candidate: continue
 
             # This is a hash from a candidate. Add it to the memory database
@@ -104,7 +98,7 @@ def read_explained_file(reportdir):
         
 def get_disk_offsets(reportdir):
     identified_blocks_fn = os.path.join(reportdir,"identified_blocks.txt")
-    print("reading "+identified_blocks_fn)
+    print(f"reading {identified_blocks_fn}")
     for line in open(identified_blocks_fn):
         try:
             (disk_offset,sector_hash,meta) = line.split("\t")
@@ -117,12 +111,12 @@ def hash_sets(reportdir):
     # Implements the HASH-SETS algorithm. Basically reports which files are most likely to be present
     # dump the database, I guess
     # Make a list of the all the sources and their score
-    
+
     print("running hash_sets")
     import math
 
     report_fn = os.path.join(reportdir,"hash-sets-report.csv")
-    print("Writing HASH-SETS output to {}".format(report_fn))
+    print(f"Writing HASH-SETS output to {report_fn}")
     of = open(report_fn, 'w', newline='')
     ofwriter = csv.writer(of,  dialect='excel')
 
@@ -132,18 +126,14 @@ def hash_sets(reportdir):
         norm = ''
         if source_id in source_id_filesizes:
             norm = source_id_count[source_id] / (math.floor(source_id_filesizes[source_id]/4096))
-            if norm>1: norm=1   # for cases where we successfully hashed the last block
+            norm = min(norm, 1)
         res.append([source_id_filenames[source_id],source_id_count[source_id],norm])
     res.sort(reverse=True,key=lambda a:(a[2],a[1]))
     ofwriter.writerows(res)
 
 
 def exists_a_larger(set1,set2):
-    # Return true if there exists an element in set2 that is one larger
-    # than an element in set1
-    for s1 in set1:
-        if s1+1 in set2: return True
-    return False
+    return any(s1+1 in set2 for s1 in set1)
 
 def hash_runs(reportdir):
     # Is there a sqlite3 database?
@@ -184,7 +174,7 @@ def hash_runs(reportdir):
 
     # Open the report file
     report_fn = os.path.join(reportdir,"hash-runs-report.csv")
-    print("writing "+report_fn)
+    print(f"writing {report_fn}")
     of = open(report_fn, 'w', encoding='utf-8', newline='')
     of.write(UTF8_BOM)          # makes Excel open the file as Unicode
     ofwriter = csv.writer(of,  dialect='excel')
@@ -200,7 +190,7 @@ def hash_runs(reportdir):
         if args.debug: print("candidate source_id",source_id,"filename",filename)
 
         mod8_block_runs = []
-        for i in range(0,8):
+        for i in range(8):
             mod8_block_runs.append([])
 
         # Build the block_runs array for each mod8 value
@@ -304,7 +294,7 @@ def hash_runs(reportdir):
                     print("new: {}\n".format(rows[i-1]))
                 del rows[i]                # and combine the rows
                 total_combined_rows += 1
-                
+
         # Delete the runs that are two small (after the combine step)
         for i in range(len(rows)-1,-1,-1):
             if rows[i][4] - rows[i][3] + 1 <= args.minrun:
@@ -331,7 +321,7 @@ if __name__=="__main__":
     import argparse
     from subprocess import call
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument("reportdir",help="Report directory")
     parser.add_argument("--all",action='store_true',help='show all files; disable candidate selection')
     parser.add_argument("--debug",action='store_true',help='print debug info')
@@ -344,7 +334,7 @@ if __name__=="__main__":
     args = parser.parse_args()
 
     if not os.path.exists(args.reportdir):
-        print("{} does not exist".format(args.reportdir))
+        print(f"{args.reportdir} does not exist")
         exit(1)
 
     explainfile = os.path.join(args.reportdir,"identified_blocks_explained.txt")
@@ -363,14 +353,14 @@ if __name__=="__main__":
 
     dbname = os.path.join(args.reportdir,args.dbname)
     if not os.path.exists(dbname) and args.run:
-        print("{} does not exist. Will try to run tsk_loaddb".format(dbname))
+        print(f"{dbname} does not exist. Will try to run tsk_loaddb")
         cmd=['tsk_loaddb','-d',dbname,args.image]
         print(" ".join(cmd))
         call(cmd)
         # Add the indexes
         print("Adding indexes to database")
         import sqlite3
-        con = sqlite3.connect("file:{}".format(dbname),uri=True)
+        con = sqlite3.connect(f"file:{dbname}", uri=True)
         cur  = con.cursor()
         cur.execute("create index if not exists start1 on tsk_file_layout(byte_start)");
         cur.execute("create index if not exists start2 on tsk_file_layout(byte_len)");

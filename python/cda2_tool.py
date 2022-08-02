@@ -68,9 +68,7 @@ def get_driveid(drivename,report_fn=None,create=True):
     if create:
         c.execute("INSERT INTO drives (driveid,drivename,report_fn) VALUES (NULL,?,?)",(drivename,report_fn))
     c.execute("SELECT driveid from drives where drivename=?",(drivename,))
-    r = c.fetchone()
-    if r: return r[0]
-    return None
+    return r[0] if (r := c.fetchone()) else None
 
 def get_drivename(driveid):
     c = conn.cursor()
@@ -99,32 +97,31 @@ def ingest(report_fn):
     c = conn.cursor()
     c.execute("select count(*) from drives where report_fn=?",(report_fn,))
     if c.fetchone()[0]>0 and args.reimport==False:
-        print("{} already imported".format(report_fn))
+        print(f"{report_fn} already imported")
         return
 
     try:
         br = bulk_extractor_reader.BulkReport(report_fn)
         image_filename = br.image_filename()
     except IndexError:
-        print("No image filename in bulk_extractor report for {}; will not ingest".format(report_fn))
-        return
-    except OSError:
-        print("Cannot open {}; will not ingest".format(report_fn))
-        return
-    except KeyError:
-        print("Cannot open {}; will not ingest".format(report_fn))
-        return
+        print(
+            f"No image filename in bulk_extractor report for {report_fn}; will not ingest"
+        )
 
+        return
+    except (OSError, KeyError):
+        print(f"Cannot open {report_fn}; will not ingest")
+        return
     if args.reimport==False:
         driveid = get_driveid(image_filename,create=False)
         if driveid:
-            print("{} already imported".format(image_filename))
+            print(f"{image_filename} already imported")
             return
 
     driveid = get_driveid(image_filename,report_fn,create=True)
-    print("Ingesting {} as driveid {}".format(br.image_filename(),driveid))
+    print(f"Ingesting {br.image_filename()} as driveid {driveid}")
     t0 = time.time()
-    
+
     if args.reimport:
         # Make sure that this driveid is not in the feature tables
         c.execute("DELETE FROM feature_drive_counts where driveid=?",(driveid,))
@@ -135,7 +132,7 @@ def ingest(report_fn):
         featureid = get_featureid(search);
         c.execute("INSERT INTO feature_drive_counts (driveid,feature_type,featureid,count) values (?,?,?,?);",
                   (driveid,SEARCH_TYPE,featureid,count))
-        
+
     # Add counts for email addresses
     for (email,count) in br.read_histogram_entries("email_histogram.txt"):
         #print("Add email {} = {}".format(email,count))
@@ -152,13 +149,13 @@ def ingest(report_fn):
             featureid = get_featureid(feature)
             pe_header_counts[featureid] += 1
         except ValueError:
-            print("got {} values".format(len(r)))
+            print(f"got {len(r)} values")
     for (featureid,count) in pe_header_counts.items():
         c.execute("INSERT INTO feature_drive_counts (driveid,feature_type,featureid,count) values (?,?,?,?);",
                   (driveid,WINPE_TYPE,featureid,count))
     conn.commit()
     t1 = time.time()
-    print("Driveid {} imported in {} seconds\n".format(driveid,t1-t0))
+    print(f"Driveid {driveid} imported in {t1 - t0} seconds\n")
 
 
 def correlate_for_type(driveid,feature_type,verbose=True,larger=False):
@@ -231,7 +228,7 @@ def make_report(driveid,verbose=True):
         print("Specify --search for correlating on search terms addresses")
         print("Specify --winpe for correlating on Windows executable headers")
         exit(1)
-    print("Report for drive: {} {}".format(driveid,get_drivename(driveid)))
+    print(f"Report for drive: {driveid} {get_drivename(driveid)}")
     if args.email:
         print("Email correlation report:")
         correlate_for_type(driveid,EMAIL_TYPE,verbose=verbose)
@@ -259,7 +256,7 @@ def build_feature_frequencies():
     print("Feature frequences built.")
     
 
-if(__name__=="__main__"):
+if (__name__=="__main__"):
     import argparse,xml.parsers.expat
     parser = argparse.ArgumentParser(description='Cross Drive Analysis with bulk_extractor output')
     parser.add_argument('reports', type=str, nargs='*', help='bulk_extractor report directories or ZIP files')
@@ -309,14 +306,12 @@ if(__name__=="__main__"):
 
     if args.report:
         make_report(args.report)
-    
+
     if args.all:
         create_schema()
         c = conn.cursor()
         c.execute("select max(driveid1) from drive_correlations")
-        start = 1
-        r = c.fetchone()
-        if r: start=r[0]
+        start = r[0] if (r := c.fetchone()) else 1
         for drive1 in range(start,2000):
             corr = correlate_for_type(drive1,SEARCH_TYPE,verbose=False,larger=True)
             print(corr)

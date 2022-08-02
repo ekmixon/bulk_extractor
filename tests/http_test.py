@@ -12,7 +12,7 @@ p = Popen(cmd,stdout=PIPE,stdin=PIPE,bufsize=0)
 
 def send(headers):
     for h in headers:
-        print("SEND: %s" % h)
+        print(f"SEND: {h}")
         p.stdin.write(h)
         p.stdin.write(b"\r\n")
     p.stdin.write(b"\r\n")
@@ -24,7 +24,7 @@ def get_response():
         line = p.stdout.readline()
         if line=="\r\n": break
         line = line.decode('utf-8').strip()
-        print("GOT: %s" % line)
+        print(f"GOT: {line}")
         if line.startswith("Content-Length: "):
             content_length = int(line[16:])
     ret = p.stdout.read(content_length)

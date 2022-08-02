@@ -20,7 +20,7 @@ be = b_e.Session()
 be.analyze_buffer("Test Dataa  demo@bulk_extractor.org Just a demo 617-555-1212 ok!")
 be.finalize()
 for featurefile, histogram in be.histograms().items():
-    print("{}:".format(featurefile))
+    print(f"{featurefile}:")
     for entry in histogram:
         print("    {}		{}".format(entry.count, entry.feature))
 

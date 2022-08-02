@@ -9,7 +9,7 @@ import sys
 STREAM_RE = re.compile(rb'.*?FlateDecode.*?stream(.*?)endstream', re.S)
 
 def process(fname):
-   print("============= {} ============".format(fname))
+   print(f"============= {fname} ============")
    with open(fname,'rb') as f:
       for s in STREAM_RE.findall(f.read()):
          try:

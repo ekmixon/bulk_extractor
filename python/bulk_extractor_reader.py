@@ -69,26 +69,23 @@ def decode_feature(ffmt):
 
 def is_comment_line(line):
     if len(line)==0: return False
-    if line[0:4]==b'\xef\xbb\xbf#': return True
-    if line[0:1]=='\ufeff':
+    if line[:4] == b'\xef\xbb\xbf#': return True
+    if line[:1] == '\ufeff':
         line=line[1:]       # ignore unicode BOM
     try:
         if ord(line[0])==65279:
             line=line[1:]       # ignore unicode BOM
     except TypeError:
         pass
-    if line[0:1]==b'#' or line[0:1]=='#':
-        return True
-    return False
+    return line[:1] in [b'#', '#']
 
 def is_histogram_line(line):
-    return line[0:2]==b"n="
+    return line[:2] == b"n="
 
 def get_property_line(line):
     """If it is a property line return the (property, value)"""
-    if line[0:1]=='#':
-        m = property_re.search(line)
-        if m:
+    if line[:1] == '#':
+        if m := property_re.search(line):
             return (m.group(1),m.group(2))
     return None
 
@@ -111,21 +108,16 @@ def parse_feature_line(line):
         return None
     if b"\xf4\x80\x80\x9c" in ary[0]: return ary # contains files
     if len(ary[0])<1: return None
-    if ary[0][0]<ord('0') or ary[0][0]>ord('9'): return None
-    return ary
+    return None if ary[0][0]<ord('0') or ary[0][0]>ord('9') else ary
 
 def is_feature_line(line):
-    if parse_feature_line(line):
-        return True
-    else:
-        return False
+    return bool(parse_feature_line(line))
 
 def is_histogram_filename(fname):
     """Returns true if this is a histogram file"""
     if "_histogram" in fname: return True
     if "url_" in fname: return True # I know this is a histogram file
-    if fname=="ccn_track2.txt": return False # I know this is not
-    return None                              # don't know
+    return False if fname=="ccn_track2.txt" else None
 
 def is_feature_filename(fname):
     """Returns true if this is a feature file"""
@@ -134,9 +126,7 @@ def is_feature_filename(fname):
     if "_histogram" in fname: return False
     if "_stopped" in fname: return False
     if "_tags" in fname: return False
-    if "wordlist" in fname: return False
-    #if "alerts.txt" in fname: return False
-    return None                 # don't know
+    return False if "wordlist" in fname else None
 
 
 class BulkReport:
@@ -182,24 +172,31 @@ class BulkReport:
             raise RuntimeError(f"Cannot decode: {name}")
 
         if self.dirname:
-            self.all_files = set([os.path.basename(fn) for fn in glob.glob(os.path.join(self.dirname,"*"))])
-            self.files     = set([os.path.basename(fn) for fn in glob.glob(os.path.join(self.dirname,"*.txt"))])
+            self.all_files = {
+                os.path.basename(fn)
+                for fn in glob.glob(os.path.join(self.dirname, "*"))
+            }
+
+            self.files = {
+                os.path.basename(fn)
+                for fn in glob.glob(os.path.join(self.dirname, "*.txt"))
+            }
+
         elif self.zipfile:
             # If there is a common prefix, we'll ignore it in is_feature_file()
             self.commonprefix = os.path.commonprefix(self.zipfile.namelist())
             while len(self.commonprefix)>0 and self.commonprefix[-1]!='/':
-                self.commonprefix=self.commonprefix[0:-1]
+                self.commonprefix = self.commonprefix[:-1]
 
-            # first find the report.xml file. If we find it, then we want to remove what comes before from
-            # each name in the map.
-            report_name_list = list(filter(lambda f:f.endswith("report.xml"), self.zipfile.namelist()))
-            report_name_prefix = None
-            if report_name_list:
+            if report_name_list := list(
+                filter(lambda f: f.endswith("report.xml"), self.zipfile.namelist())
+            ):
                 report_name_prefix = report_name_list[0].replace("report.xml","")
-
+            else:
+                report_name_prefix = None
             # extract the filenames and make a map from short name to long name.
             self.files = set()
-            self.map   = dict()
+            self.map = {}
             for fn in self.zipfile.namelist():
                 short_fn = fn
                 if report_name_prefix:
@@ -267,41 +264,42 @@ class BulkReport:
         # if the 'b' is present, so remove it if present.
         if self.zipfile:
             mode = mode.replace("b","")
-            f = self.zipfile.open(self.map[fname],mode=mode)
+            return self.zipfile.open(self.map[fname],mode=mode)
         else:
             mode = mode.replace("b","")+"b"
             fn = os.path.join(self.dirname,fname)
-            f = open(fn, mode=mode)
-        return f
+            return open(fn, mode=mode)
 
     def count_lines(self,fname):
-        count = 0
-        for line in self.open(fname):
-            if not is_comment_line(line):
-                count += 1
-        return count
+        return sum(not is_comment_line(line) for line in self.open(fname))
 
     def is_histogram_file(self,fn):
         if is_histogram_filename(fn)==True: return True
-        for line in self.open(fn,'r'):
-            if is_comment_line(line): continue
-            return is_histogram_line(line)
-        return False
+        return next(
+            (
+                is_histogram_line(line)
+                for line in self.open(fn, 'r')
+                if not is_comment_line(line)
+            ),
+            False,
+        )
 
     def feature_file_name(self,fn):
         """Returns the name of the feature file name (fn may be the full path)"""
-        if fn.startswith(self.commonprefix):
-            return fn[len(self.commonprefix):]
-        return fn
+        return fn[len(self.commonprefix):] if fn.startswith(self.commonprefix) else fn
 
     def is_feature_file(self,fn):
         """Return true if fn is a feature file"""
         if is_feature_filename(self.feature_file_name(fn))==False:
             return False
-        for line in self.open(fn):
-            if is_comment_line(line): continue
-            return is_feature_line(line)
-        return False
+        return next(
+            (
+                is_feature_line(line)
+                for line in self.open(fn)
+                if not is_comment_line(line)
+            ),
+            False,
+        )
 
     def histogram_files(self):
         """Returns a list of the histograms, by name"""
@@ -319,25 +317,20 @@ class BulkReport:
         import re
         r = re.compile(b"^n=(\d+)\t(.*)$")
         for line in self.open(fn,'r'):
-            # line = line.decode('utf-8')
-            m = r.search(line)
-            if m:
-                k = m.group(2)
+            if m := r.search(line):
+                k = m[2]
                 p = k.find(b"\t")
-                if p>0: k = k[0:p]
-                yield (k,int(m.group(1)))
+                if p>0:
+                    k = k[:p]
+                yield (k, int(m[1]))
 
     def read_histogram(self,fn):
         """Read a histogram file and return a dictonary of the histogram. Removes \t(utf16=...) """
-        ret = {}
-        for (k,v) in self.read_histogram_entries(fn):
-            ret[k] = int(v)
-        return ret
+        return {k: int(v) for k, v in self.read_histogram_entries(fn)}
 
     def read_features(self,fname):
         """Just read the features out of a feature file"""
         """Usage: for (pos,feature,context) in br.read_features("fname")"""
         for line in self.open(fname,"rb"):
-            r = parse_feature_line(line)
-            if r:
+            if r := parse_feature_line(line):
                 yield r

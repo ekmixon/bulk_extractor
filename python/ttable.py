@@ -39,7 +39,7 @@ def tvar(name,value,desc):
     if not hasattr(tvar,"out"):
         import sys;
         tvar.out=sys.stdout
-    print("%s: %s " % (desc, value))
+    print(f"{desc}: {value} ")
     tvar.out.write("\\newcommand{\\%s}{%s\\xspace}  %% %s\n" % (name,value,desc))
 
 def sigs(val,places=4):
@@ -56,21 +56,20 @@ def sigs(val,places=4):
                 continue
             res += ch
             continue
-        if count>=places:
-            if indot: break
-            if ch in "0123457890":
-                res += "0"
-                continue
-            if ch=='.':
-                break                   # in high precision area and hit '.'
-            res += ch
+        if indot: break
+        if ch in "0123457890":
+            res += "0"
+            continue
+        if ch=='.':
+            break                   # in high precision area and hit '.'
+        res += ch
     return res
 
 def icomma(i):
     """ Return an integer formatted with commas """
-    if i<0:   return "-" + icomma(-i)
-    if i<1000:return "%d" % i
-    return icomma(i/1000) + ",%03d" % (i%1000)
+    if i<0:
+        return f"-{icomma(-i)}"
+    return "%d" % i if i<1000 else icomma(i/1000) + ",%03d" % (i%1000)
 
 def commas(i,fmt):
     """ Return a number of any format formatted with commas. """
@@ -80,7 +79,7 @@ def commas(i,fmt):
         return str(i)
     dot = formatted_number.find('.')
     if dot==-1: return icomma(int(formatted_number))
-    int_part   = int(formatted_number[0:dot])
+    int_part = int(formatted_number[:dot])
     float_part = formatted_number[dot:]
     return icomma(int_part) + float_part
 
@@ -165,7 +164,7 @@ class ttable:
 
     def append_head(self,values):
         """ Append a row of VALUES to the table header. The VALUES should be a list of columsn."""
-        assert type(values)==type([]) or type(values)==type(())
+        assert type(values) in [type([]), type(())]
         self.col_headings.append(values)
 
     def append_data(self,values):
@@ -180,17 +179,17 @@ class ttable:
 
     def ncols(self):
         " Return the number of maximum number of cols in the data"
-        return max([len(r) for r in self.data])
+        return max(len(r) for r in self.data)
 
 
     ################################################################
 
     def format_cell(self,value,colNumber):
         """ Format a value that appears in a given colNumber."""
-        
+
         import decimal
         ret = None
-        if value==None:
+        if value is None:
             return ("",self.LEFT)
         if value==0 and self.SUPPRESS_ZERO in self.options:
             return ("",self.LEFT)
@@ -227,9 +226,7 @@ class ttable:
         if self.mode=='latex':
             return "\\hline\n "
         if self.mode=='text':
-            total = 0
-            for col in range(0,self.cols):
-                total += self.col_formatted_width(col)
+            total = sum(self.col_formatted_width(col) for col in range(self.cols))
             total += self.col_margin * (self.cols-1)
             return "-" * total + "\n"
         if self.mode=='html':
@@ -264,19 +261,19 @@ class ttable:
             return r[0]
         if isinstance(r,subhead):
             # Do a blank line
-            if self.mode=='text':
-                ret += '\n' + r[0]
-            if self.mode=='latex':
-                ret += '\\\\ \n' + r[0]
-            if self.mode=='html':
+            if self.mode == 'html':
                 ret += '<tr><th colspace=%d class="subhead">%s</th></tr>' % (self.cols,r[0])
+            elif self.mode == 'latex':
+                ret += '\\\\ \n' + r[0]
+            elif self.mode == 'text':
+                ret += '\n' + r[0]
             ret += self.nl()
             return ret
 
-        for colNumber in range(0,len(r)):
+        for colNumber in range(len(r)):
             if colNumber>0:
                 if self.mode=='latex': ret += " & "
-                ret += " "*self.col_margin 
+                ret += " "*self.col_margin
             (fmt,just)      = self.format_cell(r[colNumber],colNumber)
             val             = self.typeset_cell(fmt,colNumber)
 
@@ -287,7 +284,7 @@ class ttable:
             if self.mode=='html':
                 if just==self.RIGHT: just="style='text-align:right;'"
                 elif just==self.LEFT: just=""
-                ret += '<%s %s>%s</%s>' % (self.html_delim,just,val,self.html_delim)
+                ret += f'<{self.html_delim} {just}>{val}</{self.html_delim}>'
 
         if self.mode=='html':
             ret ="<tr>%s</tr>\n" % ret
@@ -299,16 +296,14 @@ class ttable:
 
     def calculate_col_formatted_widths(self):
         " Calculate the width of each formatted column and return the array "
-        self.col_formatted_widths = []
-        for i in range(0,self.cols):
-            self.col_formatted_widths.append(self.col_formatted_width(i))
+        self.col_formatted_widths = [
+            self.col_formatted_width(i) for i in range(self.cols)
+        ]
+
         return self.col_formatted_widths
 
     def should_omit_row(self,r):
-        if r.data==self.HR: return True
-        for (a,b) in self.omit_row:
-            if r[a]==b: return True
-        return False
+        return True if r.data==self.HR else any(r[a]==b for a, b in self.omit_row)
 
     def compute_col_totals(self,col_totals):
         " Add totals for the specified cols"
@@ -337,22 +332,20 @@ class ttable:
         self.cols = self.ncols() # cache
         self.mode = mode
         if self.mode not in ['text','latex','html']:
-            raise ValueError("Invalid typsetting mode "+self.mode)
+            raise ValueError(f"Invalid typsetting mode {self.mode}")
 
         ret = []
 
         if self.mode=='text':
             self.calculate_col_formatted_widths()
-            if self.title: ret.append(self.title + ":" + "\n")
+            if self.title:
+                ret.append(f"{self.title}:" + "\n")
 
         #
         # Start of the table
         #
-        if self.header:
-            if self.mode=='text':
-                ret.append(self.header)
-                ret.append("\n")
-
+        if self.header and self.mode == 'text':
+            ret.extend((self.header, "\n"))
         if self.mode=='latex' and self.do_begin:
             try:
                 colspec = self.latex_colspec
@@ -367,11 +360,8 @@ class ttable:
         #
         self.html_delim = 'th'
         if self.col_headings:
-            for row in self.col_headings:
-                ret.append(self.typeset_row(row))
-            for i in range(0,self.heading_hr_count):
-                ret.append(self.typeset_hr())
-
+            ret.extend(self.typeset_row(row) for row in self.col_headings)
+            ret.extend(self.typeset_hr() for _ in range(self.heading_hr_count))
         #
         # typeset each row.
         # computes the width of each row if necessary
@@ -397,8 +387,10 @@ class ttable:
             ret.append(self.footer + "\n")
 
         if self.do_end:
-            if self.mode=='latex': ret.append("\\end{tabular}\n")
-            if self.mode=='html':  ret.append("</table>\n")
+            if self.mode == 'html':
+                ret.append("</table>\n")
+            elif self.mode == 'latex':
+                ret.append("\\end{tabular}\n")
         return "".join(ret)
         
         

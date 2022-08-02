@@ -58,7 +58,7 @@ class byterundb:
         if self.sorted==False:
             self.rary.sort()
             self.sorted=True
-        
+
         p = bisect.bisect_left(self.rary,((pos,0,"")))
 
         # If the offset matches the first byte in the returned byte run,
@@ -71,7 +71,7 @@ class byterundb:
 
         # If the first element in the array was found, all elements are to the right
         # of the provided offset, so there is no byte extent that maches.
-        
+
         if p==0:
             return None
 
@@ -88,10 +88,11 @@ class byterundb:
         """Read an XML file and add each byte run to this database"""
         def gval(x):
             """Always return X as bytes"""
-            if x==None: return b''
+            if x is None: return b''
             if type(x)==bytes: return x
             if type(x)!=str: x = str(x)
             return x.encode('utf-8')
+
         for run in fi.byte_runs():
             try:
                 fname  = gval(fi.filename())
@@ -127,35 +128,28 @@ class byterundb2:
             print("Processed %d fileobjects in DFXML file" % self.filecount)
 
     def read_xmlfile(self,fname):
-        print("Reading file map from XML file {}".format(fname))
+        print(f"Reading file map from XML file {fname}")
         fiwalk.fiwalk_using_sax(xmlfile=open(fname,'rb'),callback=self.process)
 
     def read_imagefile(self,fname):
-        if args.nohash:
-            fiwalk_args = "-z"
-        else:
-            fiwalk_args = "-zM"
-        print("Reading file map by running fiwalk on {}".format(fname))
+        fiwalk_args = "-z" if args.nohash else "-zM"
+        print(f"Reading file map by running fiwalk on {fname}")
         fiwalk.fiwalk_using_sax(imagefile=open(fname,'rb'),callback=self.process,fiwalk_args=fiwalk_args)
 
     def search_offset(self,offset):
         """First search the allocated. If there is nothing, search unallocated"""
-        r = self.allocated.search_offset(offset)
-        if not r:
-            r = self.unallocated.search_offset(offset)
-        return r
+        return self.allocated.search_offset(
+            offset
+        ) or self.unallocated.search_offset(offset)
 
     def path_to_offset(self,offset):
         """If the path has an XOR transformation, add the offset within
         the XOR to the initial offset. Otherwise don't. Return the integer
         value of the offset."""
-        m = xor_re.search(offset)
-        if m:
+        if m := xor_re.search(offset):
             return int(m.group(1))+int(m.group(2))
         negloc = offset.find(b"-")
-        if negloc==-1:
-            return int(offset)
-        return int(offset[0:negloc])
+        return int(offset) if negloc==-1 else int(offset[:negloc])
     
     def search_path(self,path):
         return self.search_offset(self.path_to_offset(path))
@@ -199,14 +193,14 @@ def process_featurefile2(rundb,infile,outfile):
             (path,feature,context) = line[:-1].split(b'\t')
         except ValueError as e:
             print(e)
-            print("Offending line {}:".format(linenumber),line[:-1])
+            print(f"Offending line {linenumber}:", line[:-1])
             continue
         feature_count += 1
 
         # Increment counter if this feature was encoded
         if b"-" in path:
             features_encoded += 1
-        
+
         # Search for feature in database
         tpl = rundb.search_path(path)
 
@@ -306,15 +300,18 @@ if __name__=="__main__":
         if args.xmlfile:
             rundb.read_xmlfile(args.xmlfile)
             if len(rundb)==0:
-                raise RuntimeError("\nERROR: No files detected in XML file {}\n".format(args.xmlfile))
+                raise RuntimeError(f"\nERROR: No files detected in XML file {args.xmlfile}\n")
             return
-        if args.image_filename:
-            imagefile = args.image_filename
-        else:
-            imagefile = bulk_extractor_reader.BulkReport(args.bulk_extractor_report).image_filename()
+        imagefile = (
+            args.image_filename
+            or bulk_extractor_reader.BulkReport(
+                args.bulk_extractor_report
+            ).image_filename()
+        )
+
         rundb.read_imagefile(imagefile)
         if len(rundb)==0:
-            raise RuntimeError("\nERROR: No files detected in image file {}\n".format(imagefile))
+            raise RuntimeError(f"\nERROR: No files detected in image file {imagefile}\n")
 
     if args.path:
         read_filemap(rundb)

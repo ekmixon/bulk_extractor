@@ -53,7 +53,7 @@ class Session(object):
         # appropriate and to allow implicit access to self by scope since C
         # won't supply self as an explicit first argument.
         def _callback_wrapper(user, code, arg, name, fpath, feature,
-                feature_len, context, context_len):
+                    feature_len, context, context_len):
             # features and carved files have no sensible default handling, so
             # punt to the supplied callbacks.
             if code == API_CODE_FEATURE:
@@ -69,7 +69,7 @@ class Session(object):
             # histogram data is organized into a dictionary by feature recorder
             if code == API_CODE_HISTOGRAM:
                 if name not in self._histograms:
-                    self._histograms[name] = list()
+                    self._histograms[name] = []
                 # ignore histogram entries with zero counts because they can't
                 # occur in real data
                 if arg == 0:
@@ -91,6 +91,7 @@ class Session(object):
             # passed to a user callback
             raise BulkExtractorException(
                     "unknown callback code {}".format(code))
+
         # keep reference to BeCallback to avoid garbage collection and
         # heisenbuggy segfaults
         self._callback = BeCallback(_callback_wrapper)
@@ -100,7 +101,7 @@ class Session(object):
         global featurefiles
         self._scanners = scanners
         self._featurefiles = featurefiles
-        self._histograms = dict()
+        self._histograms = {}
 
         # PROCESS_COMMANDS is necessary to load feature recorders, calling it
         # without having any commands to process prevents BE from blowing up
